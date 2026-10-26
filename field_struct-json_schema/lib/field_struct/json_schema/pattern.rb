@@ -69,17 +69,17 @@ module FieldStruct
       # @return [void]
       def step
         char = take
-        quantifier = false
+        # Whether the previous token was a quantifier, for spotting a possessive one.
+        @quantified = @after_quantifier
+        @after_quantifier = false
         if char == '\\' then escape(take || unsupported)
         elsif @in_class then class_char(char)
-        else
-          quantifier = outside_char(char)
+        else outside_char(char)
         end
-        @after_quantifier = quantifier
       end
 
       # @param char [String]
-      # @return [Boolean] whether +char+ ended a quantifier
+      # @return [void]
       def outside_char(char)
         case char
         when '[' then open_class
@@ -87,38 +87,37 @@ module FieldStruct
         when '.' then @out << '[^\n]'
         when '^' then @out << '(?<![^\n])'
         when '$' then @out << '(?![^\n])'
-        when '*', '+', '?' then return quantifier(char)
-        when '{' then return interval
+        when '*', '+', '?' then quantifier(char)
+        when '{' then interval
         when '}', ']' then @out << '\\' << char # literal in Ruby, a syntax error under u
         else @out << fold(char)
         end
-        false
       end
 
       # @param char [String] +*+, +++ or +?+
-      # @return [Boolean]
+      # @return [void]
       def quantifier(char)
-        unsupported if char == '+' && @after_quantifier # possessive
+        unsupported if char == '+' && @quantified # possessive
         @out << char
         if peek == '?' # lazy
           @out << take
-          return false
+        else
+          @after_quantifier = true
         end
-        true
       end
 
-      # @return [Boolean]
+      # @return [void]
       def interval
         body = @source[@pos..][/\A\d*(,\d*)?\}/]
         unless body&.match?(/\A\d/)
           # Ruby reads "{,n}" as {0,n}; JavaScript reads it as literal text.
           unsupported if body
           @out << '\\{' # a literal brace, escaped for u mode
-          return false
+          return
         end
         @pos += body.length
         @out << '{' << body
-        true
+        @after_quantifier = true
       end
 
       # @return [void]
@@ -248,6 +247,7 @@ module FieldStruct
       # @return [String, nil]
       def peek = @source[@pos]
 
+      # @return [void] never returns
       # @raise [Unsupported]
       def unsupported
         raise Unsupported

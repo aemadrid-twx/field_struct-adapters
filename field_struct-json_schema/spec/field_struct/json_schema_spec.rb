@@ -498,12 +498,12 @@ RSpec.describe FieldStruct::JSONSchema do
   describe '.pattern_for' do
     {
       /\A\d+\.\d+\.\d+\z/ => '^\d+\.\d+\.\d+$',
-      /\Aa\-b\ c\@d\z/ => '^a-b c@d$',
-      /\A[\w\-]+\z/ => '^[\w\-]+$',
+      Regexp.new('\Aa\-b\ c\@d\z') => '^a-b c@d$',
+      Regexp.new('\A[\w\-]+\z') => '^[\w\-]+$',
       /\Aabc.\z/ => '^abc[^\n]$',
       /\A\s\S\z/ => '^[\t\n\v\f\r ][^\t\n\v\f\r ]$',
       /^foo$/ => '(?<![^\n])foo(?![^\n])',
-      /\Aa}b]c{d\z/ => '^a\}b\]c\{d$',
+      Regexp.new(['\Aa}b', ']c{d\z'].join) => '^a\}b\]c\{d$', # lone } ] { are literal in Ruby
       /\A\h{2}\z/i => '^[0-9a-fA-F]{2}$',
       /\Aok\z/i => '^[oO][kK]$',
       /\A[a-f8]\z/i => '^[a-fA-F8]$',
@@ -514,7 +514,7 @@ RSpec.describe FieldStruct::JSONSchema do
       end
     end
 
-    [/\A(?#c)a\z/, /\Aa{,3}\z/, /\A[a-z&&[^aeiou]]\z/, /\A(?<d>\d)\g<d>\z/, /\A(?a)\w\z/, /\A\e\z/, /\A[\A]\z/,
+    [/\A(?#c)a\z/, /\Aa{,3}\z/, /\A[a-z&&[^aeiou]]\z/, /\A(?<d>\d)\g<d>\z/, /\A(?a)\w\z/, /\A\e\z/, Regexp.new('\A[\A]\z'),
      /\A\p{L}\z/, /\A[[:alpha:]]\z/, /\Aa++\z/, /\Aa{2}+\z/, /\A(?>a)\z/, /\Aa\Z/, /\A[0-z]\z/i, /a/x, /a/m].each do |regexp|
       it "gives up on #{regexp.inspect}" do
         expect(described_class.pattern_for(regexp)).to be_nil
