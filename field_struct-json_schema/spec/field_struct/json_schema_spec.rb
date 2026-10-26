@@ -76,10 +76,12 @@ RSpec.describe FieldStruct::JSONSchema do
         expect(schema['properties']['nickname']).to eq('type' => %w[string null])
       end
 
-      it 'adds null to an optional enum' do
+      it 'adds null, and a blank string, to an optional string enum' do
         klass = struct('Light') { optional :color, :string, enum: %w[red green] }
 
-        expect(property(klass, :color)).to eq('type' => %w[string null], 'enum' => ['red', 'green', nil])
+        expect(property(klass, :color)).to eq(
+          'anyOf' => [{'type' => %w[string null], 'enum' => ['red', 'green', nil]}, described_class::BLANK_STRING]
+        )
       end
 
       it 'wraps a nullable $ref in anyOf' do
@@ -126,8 +128,8 @@ RSpec.describe FieldStruct::JSONSchema do
           'v' => {},
           'sym' => {'type' => 'string'},
           'u' => {'type' => 'string', 'format' => 'uuid'},
-          'url' => {'type' => 'string', 'format' => 'uri'},
-          'em' => {'type' => 'string', 'format' => 'email'}
+          'url' => {'type' => 'string', 'pattern' => '^[hH][tT][tT][pP][sS]?://[^\t\n\v\f\r /$.?#][^\t\n\v\f\r ]*$'},
+          'em' => {'type' => 'string', 'pattern' => '^[^@\t\n\v\f\r ]+@[^@\t\n\v\f\r ]+\.[^@\t\n\v\f\r ]+$'}
         )
       end
 
@@ -195,18 +197,18 @@ RSpec.describe FieldStruct::JSONSchema do
 
       it 'keeps a pattern JSON Schema cannot express as x-ruby-pattern' do
         klass = struct('Loose') do
-          required :caseless, :string, format: /\Aabc\z/i
+          required :caseless, :string, format: /\A[0-z]\z/i
           required :possessive, :string, format: /\Aa++\z/
         end
         properties = described_class.generate(klass)['properties']
 
-        expect(properties['caseless']).to eq('type' => 'string', 'x-ruby-pattern' => '\Aabc\z')
+        expect(properties['caseless']).to eq('type' => 'string', 'x-ruby-pattern' => '\A[0-z]\z')
         expect(properties['possessive']).to eq('type' => 'string', 'x-ruby-pattern' => '\Aa++\z')
       end
     end
 
     describe 'arrays, unions and nested structs' do
-      it 'maps array elements, letting scalar elements be null' do
+      it 'maps array elements, letting every element be null' do
         struct('Line') { required :sku, :string }
         klass = struct('Cart') do
           required :counts, :array, of: :integer, element: {in: 1..5}
@@ -217,7 +219,7 @@ RSpec.describe FieldStruct::JSONSchema do
         expect(properties['counts']).to eq(
           'type' => 'array', 'items' => {'type' => %w[integer null], 'minimum' => 1, 'maximum' => 5}
         )
-        expect(properties['lines']).to eq('type' => 'array', 'items' => {'$ref' => '#/$defs/Line'})
+        expect(properties['lines']).to eq('type' => 'array', 'items' => {'anyOf' => [{'$ref' => '#/$defs/Line'}, {'type' => 'null'}]})
       end
 
       it 'maps a union to anyOf, and a union with :value to anything' do
@@ -248,7 +250,9 @@ RSpec.describe FieldStruct::JSONSchema do
         doc = klass.new(home: {city: 'A'}, friends: [{home: {city: 'B'}}]).to_json
         expect(errors_for(schema, doc)).to eq([])
         expect(errors_for(schema, doc.sub('"city":"B"', '"city":2'))).not_to be_empty
-        expect(schema['properties']['friends']).to eq('type' => %w[array null], 'items' => {'$ref' => '#'})
+        expect(schema['properties']['friends']).to eq(
+          'type' => %w[array null], 'items' => {'anyOf' => [{'$ref' => '#'}, {'type' => 'null'}]}
+        )
       end
 
       it 'inlines an anonymous nested struct' do
@@ -333,6 +337,187 @@ RSpec.describe FieldStruct::JSONSchema do
 
         expect(properties['amount']).to eq('type' => 'string', 'pattern' => '^[0-9]+/[0-9]+$')
         expect(properties['other']).to eq('x-ruby-type' => 'Rational')
+      end
+    end
+  end
+
+  # Each case is a valid instance whose to_json an earlier version's schema
+  # rejected (or a schema it couldn't produce), from the PR #18 review.
+  describe 'the schema accepts every valid instance' do
+    it 'accepts a blank optional string that skips enum: and format:' do
+      klass = struct('Opt') do
+        optional :color, :string, enum: %w[red green]
+        optional :code, :string, format: /\A[A-Z]{3}\z/
+        optional :id, :uuid
+        optional :mail, :email
+      end
+      instance = klass.new(color: '', code: "\t", id: ' ', mail: '')
+
+      expect(instance).to be_valid
+      expect(errors_for(klass.to_json_schema, instance.to_json)).to eq([])
+      expect(errors_for(klass.to_json_schema, '{"color":"blue"}')).not_to be_empty
+    end
+
+    it 'accepts a nil element in an array of nested structs' do
+      struct('Line') { required :sku, :string }
+      klass = struct('Cart') { required :lines, :array, of: Line }
+      instance = klass.new(lines: [{sku: 'x'}, nil])
+
+      expect(instance).to be_valid
+      expect(errors_for(klass.to_json_schema, instance.to_json)).to eq([])
+    end
+
+    it 'describes a declared format: on uuid, url and email instead of the type default' do
+      klass = struct('Ids') do
+        required :id, :uuid, format: /\A[A-Z]{3}\z/
+        required :site, :url, format: /\A\S+\z/
+      end
+      instance = klass.new(id: 'ABC', site: 'example.com')
+
+      expect(instance).to be_valid
+      expect(errors_for(klass.to_json_schema, instance.to_json)).to eq([])
+      expect(property(klass, :id)).to eq('type' => 'string', 'pattern' => '^[A-Z]{3}$')
+    end
+
+    it 'accepts the emails and URLs the default formats accept' do
+      klass = struct('Contact') do
+        required :mail, :email
+        required :site, :url
+      end
+      schema = klass.to_json_schema
+      [%w[josé@example.com https://example.com/search?q=café], %w[me@my_host.com https://example.com/{id}],
+       %w[a..b@example.com HTTPS://日本.jp/]].each do |mail, site|
+        instance = klass.new(mail: mail, site: site)
+
+        expect(instance).to be_valid
+        expect(errors_for(schema, instance.to_json)).to eq([])
+      end
+      expect(errors_for(schema, '{"mail":"a b@c.d","site":"https://x.io"}')).not_to be_empty
+    end
+
+    it 'leaves array elements unconstrained when element: declares no format' do
+      klass = struct('ArrFmt') { required :ids, :array, of: :uuid }
+      instance = klass.new(ids: ['not-a-uuid'])
+
+      expect(instance).to be_valid
+      expect(errors_for(klass.to_json_schema, instance.to_json)).to eq([])
+    end
+
+    it 'adds null to an optional field with an override' do
+      money = Class.new(FieldStruct::Types::Base) do
+        def coerce(value, **) = value
+        def ruby_type = Rational
+        def json_schema = {'type' => 'string'}
+      end
+      klass = struct('Ledger') do
+        optional :amount, money
+        optional :other, :value, json_schema: {'type' => 'integer'}
+      end
+
+      expect(errors_for(klass.to_json_schema, klass.new.to_json)).to eq([])
+      expect(property(klass, :other)).to eq('type' => %w[integer null])
+    end
+
+    it 'gives only defaults that are already what to_json writes' do
+      klass = struct('Defaults') do
+        optional :name, :string, default: 'x'
+        optional :label, :string, default: 1
+        optional :ratio, :float, default: 1
+        optional :kind, :symbol, default: :basic
+        optional :price, :big_decimal, default: '1'
+      end
+      properties = klass.to_json_schema['properties']
+
+      expect(properties.transform_values { |schema| schema['default'] })
+        .to eq('name' => 'x', 'label' => nil, 'ratio' => 1.0, 'kind' => 'basic', 'price' => nil)
+    end
+  end
+
+  describe 'schemas a validator can load' do
+    it 'inlines a struct named under an anonymous module' do
+      mod = Module.new
+      mod.const_set(:Addr, Class.new(FieldStruct::Base) { required :city, :string })
+      klass = struct('Person') { required :home, mod::Addr }
+      schema = klass.to_json_schema
+
+      expect(JSONSchemer.valid_schema?(schema)).to be(true)
+      expect(schema).not_to have_key('$defs')
+      expect(errors_for(schema, klass.new(home: {city: 'A'}).to_json)).to eq([])
+    end
+
+    it 'leaves an infinite in: bound open and makes a BigDecimal one a number' do
+      klass = struct('Bounds') do
+        required :n, :integer, in: 0..Float::INFINITY
+        required :x, :float, in: BigDecimal('0')..BigDecimal('1')
+      end
+      schema = Oj.load(Oj.dump(klass.to_json_schema, mode: :compat))
+
+      expect(schema['properties']['n']).to eq('type' => 'integer', 'minimum' => 0)
+      expect(schema['properties']['x']).to eq('type' => 'number', 'minimum' => 0.0, 'maximum' => 1.0)
+      expect(JSONSchemer.valid_schema?(schema)).to be(true)
+    end
+
+    it 'describes an array of arrays or of unions, and a union with an array member' do
+      klass = struct('Odd') do
+        optional :grid, :array, of: :array
+        optional :mixed, :array, of: :union
+        optional :either, :union, of: %i[string array]
+      end
+      properties = klass.to_json_schema['properties']
+
+      expect(properties['grid']).to eq('type' => %w[array null], 'items' => {'type' => %w[array null]})
+      expect(properties['mixed']).to eq('type' => %w[array null])
+      expect(properties['either']).to eq('anyOf' => [{'type' => 'string'}, {'type' => 'array'}, {'type' => 'null'}])
+    end
+  end
+
+  it 'returns a copy: changing the schema leaves validation alone' do
+    klass = struct('Order') do
+      required :status, :string, enum: %w[open paid]
+      required :tier, :integer, in: [1, 2]
+      optional :tags, :value, default: ['a']
+    end
+    schema = klass.to_json_schema
+    schema['properties']['status']['enum'] << 'closed'
+    schema['properties']['tier']['enum'] << 3
+    schema['properties']['tags']['default'] << 'b'
+
+    expect(klass.new(status: 'closed', tier: 3)).not_to be_valid
+    expect(klass.new.tags).to eq(['a'])
+  end
+
+  it 'refuses a serialization: that is not a Symbol, and a pattern_for argument that is not a Regexp' do
+    klass = struct('Thing') { required :name, :string }
+
+    expect { klass.to_json_schema(serialization: nil) }.to raise_error(ArgumentError, /serialization: to be a Symbol/)
+    expect { described_class.pattern_for('abc') }.to raise_error(ArgumentError, /expects a Regexp, got "abc"/)
+  end
+
+  # Every pattern here was checked against Node's RegExp, with and without
+  # the u flag, on the same samples as Ruby (PR #18).
+  describe '.pattern_for' do
+    {
+      /\A\d+\.\d+\.\d+\z/ => '^\d+\.\d+\.\d+$',
+      /\Aa\-b\ c\@d\z/ => '^a-b c@d$',
+      /\A[\w\-]+\z/ => '^[\w\-]+$',
+      /\Aabc.\z/ => '^abc[^\n]$',
+      /\A\s\S\z/ => '^[\t\n\v\f\r ][^\t\n\v\f\r ]$',
+      /^foo$/ => '(?<![^\n])foo(?![^\n])',
+      /\Aa}b]c{d\z/ => '^a\}b\]c\{d$',
+      /\A\h{2}\z/i => '^[0-9a-fA-F]{2}$',
+      /\Aok\z/i => '^[oO][kK]$',
+      /\A[a-f8]\z/i => '^[a-fA-F8]$',
+      /\A(?<y>\d)\k<y>(?<=1)\z/ => '^(?<y>\d)\k<y>(?<=1)$'
+    }.each do |regexp, pattern|
+      it "translates #{regexp.inspect}" do
+        expect(described_class.pattern_for(regexp)).to eq(pattern)
+      end
+    end
+
+    [/\A(?#c)a\z/, /\Aa{,3}\z/, /\A[a-z&&[^aeiou]]\z/, /\A(?<d>\d)\g<d>\z/, /\A(?a)\w\z/, /\A\e\z/, /\A[\A]\z/,
+     /\A\p{L}\z/, /\A[[:alpha:]]\z/, /\Aa++\z/, /\Aa{2}+\z/, /\A(?>a)\z/, /\Aa\Z/, /\A[0-z]\z/i, /a/x, /a/m].each do |regexp|
+      it "gives up on #{regexp.inspect}" do
+        expect(described_class.pattern_for(regexp)).to be_nil
       end
     end
   end
