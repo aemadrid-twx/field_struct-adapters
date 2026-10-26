@@ -525,7 +525,10 @@ RSpec.describe FieldStruct::JSONSchema do
       /\A(?<y>\d)(?<=1)\z/ => '^(?<y>\d)(?<=1)$',
       /\Ayes\z/i => "^[yY][eE][sS\u017F]$",
       /\Aa{2,3}?b\z/ => '^a{2,3}?b$',
-      /\A😀+\z/ => '^(?:😀)+$'
+      /\A😀+\z/ => '^(?:😀)+$',
+      /\A[\s\S]*\z/ => '^[\s\S]*$',
+      /\A[a-z]{3,16}\z/i => "^[a-zA-Z\u017F\u212A]{3,16}$", # a range never merges into ß
+      /\A[^s]{2}\z/i => "^[^sS\u017F]{2}$"
     }.each do |regexp, pattern|
       it "translates #{regexp.inspect}" do
         expect(described_class.pattern_for(regexp)).to eq(pattern)
@@ -538,7 +541,10 @@ RSpec.describe FieldStruct::JSONSchema do
      /\Afile\z/i, /\Aé\z/i, /\A\x41\z/i, /\A[!-~]\z/i, Regexp.new('\A[\\\\-f]\z', Regexp::IGNORECASE),
      /\A(a)\1\z/, /\A(?<q>a)\k<q>\z/, /\Aa{2}?\z/, Regexp.new('\Aa**\z'), /\A(?=a)*a\z/, Regexp.new('\A\01\z'),
      Regexp.new('\A\xC3\xA9\z', Regexp::NOENCODING), Regexp.new('\A[]a]\z'), Regexp.new('\A[😀]\z'), Regexp.new('\A[\t-~]\z', Regexp::IGNORECASE),
-     /\A(?:(?<n>a)|(?<n>b))\z/].each do |regexp|
+     /\A(?:(?<n>a)|(?<n>b))\z/,
+     # Third review: \b is Unicode-aware in Ruby; Onigmo merges one-letter atoms ("s{2}", "[s]s" match "ß").
+     /\bfoo\b/, /\As{2}\z/i, Regexp.new(['\A[s', ']s\z'].join, Regexp::IGNORECASE), Regexp.new(['\A[s-', 's]{2}\z'].join, Regexp::IGNORECASE), Regexp.new(['\A[f', ']i\z'].join, Regexp::IGNORECASE), Regexp.new("\\A[\u00A1-\u00BF]\\z", Regexp::IGNORECASE),
+     Regexp.new("\\Ai\u0307\\z", Regexp::IGNORECASE), Regexp.new(['\A[\W', ']\z'].join, Regexp::IGNORECASE)].each do |regexp|
       it "gives up on #{regexp.inspect}" do
         expect(described_class.pattern_for(regexp)).to be_nil
       end

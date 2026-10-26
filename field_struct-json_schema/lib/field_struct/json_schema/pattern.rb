@@ -14,17 +14,20 @@ module FieldStruct
     # * An escaped non-syntax character (+\-+, +\ +, +\@+) loses its
     #   backslash outside a class, since +u+ mode rejects it.
     # * Case-insensitive (+/i+) is spelled out for ASCII letters, with Ruby's
-    #   extra folds (+s+ also matches +\u017F+, +k+ the Kelvin sign): +ok+ becomes
-    #   +[oO][kKK]+, +[a-f]+ becomes +[a-fA-F]+.
+    #   extra folds (+s+ also matches the long s U+017F, +k+ the Kelvin sign
+    #   U+212A): +[a-f]+ becomes +[a-fA-F]+.
     # * Gives up on: Ruby-only escapes (+\Z+, +\G+, +\p{…}+, +\e+, …),
     #   backreferences, groups other than +(?:+, +(?=+, +(?!+, +(?<=+,
     #   +(?<!+ and +(?<name>+, possessive or stacked quantifiers, +{n}?+
     #   (optional in Ruby, lazy in JavaScript), a quantified anchor or
     #   lookaround, +{,n}+, nested classes and +&&+, a leading +]+ in a
-    #   class, non-ASCII bytes in +\x+, astral characters in a class, and
-    #   under +/i+: non-ASCII letters, +\x+ / +\u+ escapes, ranges whose ends
-    #   aren't both letters but which cover letters, and letter pairs Ruby
-    #   folds to one character (+ss+ matches +ß+, +fi+ matches +ﬁ+).
+    #   class, non-ASCII bytes in +\x+, astral characters in a class, +\b+ /
+    #   +\B+ outside a class (Unicode-aware in Ruby, ASCII in JavaScript), and
+    #   under +/i+: any non-ASCII character, +\x+ / +\u+ escapes, +\W+ / +\D+
+    #   in a class, ranges whose ends aren't both letters but which cover
+    #   letters, and letters that could pair into one Ruby folds to one
+    #   character (+ss+ matches +ß+, +fi+ matches +ﬁ+, and so do +s{2}+ and
+    #   +[s]s+).
     #
     # Without the +u+ flag an astral character (outside the BMP) counts as
     # two code units, so +.+ and negated classes differ there. The line
@@ -32,8 +35,9 @@ module FieldStruct
     #
     # @api private
     class Pattern
-      # Escapes ECMA-262 reads as Ruby does (Ruby's +\d+ / +\w+ / +\b+ are
-      # ASCII by default, like JavaScript's).
+      # Escapes ECMA-262 reads as Ruby does (Ruby's +\d+ / +\w+ are ASCII by
+      # default, like JavaScript's; +\b+ / +\B+ are only shared inside a
+      # class, as backspace).
       # @return [String]
       SHARED_ESCAPES = 'dDwWbBnrtfv'
       # Characters +u+ mode accepts as an identity escape.
@@ -75,11 +79,17 @@ module FieldStruct
       # @return [String, nil] the ECMA-262 pattern, or +nil+ when there is no
       #   exact translation
       def to_s
-        unsupported if @fold_case && @source.match?(MULTI_FOLD)
+        unsupported if @fold_case && (@source.match?(MULTI_FOLD) || !@source.ascii_only?)
         @out = +''
         @pos = 0
         @in_class = false
-        @groups = [] # :plain or :lookaround, per open group
+        @groups = [] # [:plain or :lookaround, where it starts in @out], per open group
+        # Where the last quantifiable atom starts in @out, and the atom before it.
+        @atom_start = nil
+        @prev_start = nil
+        # Under /i, single-letter atoms (s, [s], [s-s]) by where they start in
+        # @out: Ruby can merge those into a string that folds as one character.
+        @folded = {}
         @names = []
         # Whether the last token can take a quantifier, and whether it is one
         # (:lazy_ok when a "?" after it would make it lazy).
@@ -108,7 +118,11 @@ module FieldStruct
         case char
         when '*', '+', '?' then quantifier(char)
         when '{' then interval
-        when '[' then atom { open_class }
+        when '['
+          # "[\s\S]" (anything) is the same set in both, though \s isn't.
+          return atom { @out << '[\s\S]' } if @source[@pos, 5] == '\s\S]' && (@pos += 5)
+
+          atom { open_class }
         when '(' then group
         when ')' then close_group
         when '|' then plain_token('|')
@@ -123,6 +137,8 @@ module FieldStruct
       # Emits something a quantifier may follow.
       # @return [void]
       def atom
+        @prev_start = @atom_start
+        @atom_start = @out.length
         yield
         @quantifiable = true
         @quantified = false
@@ -132,6 +148,7 @@ module FieldStruct
       # @param text [String]
       # @return [void]
       def plain_token(text)
+        @atom_start = nil
         @out << text
         @quantifiable = false
         @quantified = false
@@ -161,6 +178,8 @@ module FieldStruct
           return
         end
         unsupported if !@quantifiable || @quantified
+        # Under /i Ruby repeats a one-letter atom into a string: "s{2}" matches "ß".
+        unsupported if body.to_i >= 2 && folded_since(@atom_start).intersect?(%w[s f])
         @pos += body.length
         @out << '{' << body
         # "{n}?" is an optional {n} in Ruby but a lazy {n} in JavaScript, so
@@ -170,6 +189,8 @@ module FieldStruct
 
       # @return [void]
       def group
+        start = @out.length
+        @atom_start = nil
         @out << '('
         kind = :plain
         if peek == '?'
@@ -183,7 +204,7 @@ module FieldStruct
           else unsupported
           end
         end
-        @groups.push(kind)
+        @groups.push([kind, start])
         @quantifiable = false
         @quantified = false
       end
@@ -205,9 +226,10 @@ module FieldStruct
 
       # @return [void]
       def close_group
-        kind = @groups.pop || unsupported
+        kind, start = @groups.pop || unsupported
         @out << ')'
         @quantifiable = kind == :plain
+        @atom_start = @quantifiable ? start : nil
         @quantified = false
       end
 
@@ -218,7 +240,9 @@ module FieldStruct
         @range_dash = false
         @low = nil
         @out << '['
-        @out << take if peek == '^'
+        @class_negated = peek == '^'
+        @out << take if @class_negated
+        @class_source = @pos
         # A leading "]" is a literal in Ruby and closes the class in JavaScript.
         unsupported if peek == ']'
       end
@@ -246,6 +270,8 @@ module FieldStruct
       # @return [void]
       def close_class
         @in_class = false
+        letter = @source[@class_source...(@pos - 1)][/\A([A-Za-z])(?:-\1)?\z/, 1]
+        @folded[@atom_start] = [letter.downcase] if @fold_case && letter && !@class_negated
         @out << ']'
         @quantifiable = true
         @quantified = false
@@ -300,7 +326,7 @@ module FieldStruct
         case char
         when 'A' then plain_token('^')
         when 'z' then plain_token('$')
-        when 'b', 'B' then plain_token("\\#{char}")
+        when 'b', 'B' then unsupported # Ruby's word boundary counts é and ſ as word characters
         when 's' then atom { @out << "[#{SPACE}]" }
         when 'S' then atom { @out << "[^#{SPACE}]" }
         when 'h' then atom { @out << "[#{HEX}]" }
@@ -321,6 +347,7 @@ module FieldStruct
         when 'h' then @out << HEX
         when '-' then @out << '\\-'
         when 'B', 'k' then unsupported # a literal in a Ruby class, an error under u
+        when 'W', 'D' then @fold_case ? unsupported : @out << shared_escape(char) # /i adds "ss" for ß
         else @out << shared_escape(char)
         end
       end
@@ -370,7 +397,20 @@ module FieldStruct
         return "(?:#{char})" if char.ord > 0xFFFF # one atom for a quantifier, with or without u
         return char unless cased?(char)
 
+        # Under /i Ruby merges a letter with the atom before it: "[s]s" matches "ß".
+        lower = char.downcase
+        unsupported if @prev_start && folded_since(@prev_start).any? { |before| "#{before}#{lower}".match?(MULTI_FOLD) }
+        @folded[@atom_start] = [lower]
         "[#{folds(char)}]"
+      end
+
+      # @param start [Integer, nil] a position in the output
+      # @return [Array<String>] the lowercase letters spelled out as folds
+      #   from +start+ on
+      def folded_since(start)
+        return [] if start.nil?
+
+        @folded.select { |at, _| at >= start }.values.flatten
       end
 
       # @param char [String] an ASCII letter
