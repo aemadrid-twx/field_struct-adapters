@@ -152,7 +152,7 @@ module FieldStruct
       # @return [Hash{String=>Object}]
       def schema
         out = {'$schema' => DRAFT}
-        out['title'] = @root.name if named?(@root)
+        out['title'] = @root.name if Introspection.named?(@root)
         out.merge!(object_schema(@root))
         out['$defs'] = @defs unless @defs.empty?
         out
@@ -163,13 +163,12 @@ module FieldStruct
       # @param klass [Class<FieldStruct::Base>]
       # @return [Hash{String=>Object}]
       def object_schema(klass)
-        names = klass.metadata.serialization(@serialization)
         properties = {}
         required = []
-        klass.metadata.each do |field|
-          key = (names[field.name] || field.name).to_s
-          properties[key] = property_schema(field)
-          required << key if field.required? && field.default.nil?
+        Introspection.properties(klass, serialization: @serialization).each do |property|
+          field = property.field
+          properties[property.key] = property_schema(property)
+          required << property.key if field.required? && field.default.nil?
         end
         out = {'type' => 'object', 'properties' => properties}
         out['required'] = required unless required.empty?
@@ -177,11 +176,11 @@ module FieldStruct
         out
       end
 
-      # @param field [Field]
+      # @param property [Introspection::Property]
       # @return [Hash{String=>Object}]
-      def property_schema(field)
-        override = override(field.options[:json_schema]) || override(field.type_instance.json_schema)
-        schema = override || value_schema(field.type_instance, field.options)
+      def property_schema(property)
+        field = property.field
+        schema = override(field.options[:json_schema]) || node_schema(property.node)
         annotations(field).merge(field.required? ? schema : optional(schema, field.type_instance))
       end
 
@@ -239,35 +238,36 @@ module FieldStruct
         end
       end
 
-      # @param type [Types::Base]
-      # @param options [Hash{Symbol=>Object}]
+      # The node's schema: its type's own {Types::Base#json_schema} when it
+      # has one, else derived from the node.
+      #
+      # @param node [Introspection::ScalarNode, Introspection::ArrayNode,
+      #   Introspection::UnionNode, Introspection::StructNode]
       # @return [Hash{String=>Object}]
-      def value_schema(type, options)
-        case type
-        when FieldStruct::Types::Array then array_schema(options)
-        when FieldStruct::Types::Union then union_schema(type)
-        when FieldStruct::Types::Nested then ref_for(type.struct_class)
-        else scalar_schema(type, options)
-        end
+      def node_schema(node)
+        override(node.type.json_schema) ||
+          case node
+          when Introspection::ArrayNode then array_schema(node)
+          when Introspection::UnionNode then union_schema(node)
+          when Introspection::StructNode then ref_for(node.klass)
+          else scalar_schema(node.type, node.options)
+          end
       end
 
-      # @param options [Hash{Symbol=>Object}] the array field's options
+      # @param node [Introspection::ArrayNode]
       # @return [Hash{String=>Object}]
-      def array_schema(options)
-        of_type = options[:of_type]
+      def array_schema(node)
         # An array of arrays or of unions carries no element type to describe.
-        return {'type' => 'array'} if of_type.nil? || (of_type.is_a?(::Class) && of_type <= FieldStruct::Types::Union)
+        return {'type' => 'array'} unless node.element
 
-        element = of_type.is_a?(::Class) ? of_type.new : of_type
-        items = override(element.json_schema) || value_schema(element, options[:element] || {})
         # Any element may be nil, a nested one too: validation skips nil elements.
-        {'type' => 'array', 'items' => nullable(items)}
+        {'type' => 'array', 'items' => nullable(node_schema(node.element))}
       end
 
-      # @param union [Types::Union]
+      # @param node [Introspection::UnionNode]
       # @return [Hash{String=>Object}] +{}+ when a member accepts anything
-      def union_schema(union)
-        members = union.member_types.map { |member| override(member.json_schema) || value_schema(member, {}) }
+      def union_schema(node)
+        members = node.members.map { |member| node_schema(member) }
         return {} if members.include?({})
 
         {'anyOf' => members.uniq}
@@ -277,20 +277,13 @@ module FieldStruct
       # @return [Hash{String=>Object}]
       def ref_for(klass)
         return {'$ref' => '#'} if klass.equal?(@root)
-        return inline(klass) unless named?(klass)
+        return inline(klass) unless Introspection.named?(klass)
 
         unless @defs.key?(klass.name)
           @defs[klass.name] = {} # reserve the slot so a cycle refers back to it
           @defs[klass.name] = {'title' => klass.name}.merge(object_schema(klass))
         end
         {'$ref' => "#/$defs/#{klass.name}"}
-      end
-
-      # @param klass [Class<FieldStruct::Base>]
-      # @return [Boolean] whether +klass+ has a name usable as a +$defs+ key
-      #   and title (one under an anonymous module reads "#<Module:0x…>::Addr")
-      def named?(klass)
-        !klass.name.nil? && !klass.name.include?('#<')
       end
 
       # @param klass [Class<FieldStruct::Base>] an anonymous struct
