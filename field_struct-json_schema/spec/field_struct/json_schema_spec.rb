@@ -128,7 +128,7 @@ RSpec.describe FieldStruct::JSONSchema do
           'v' => {},
           'sym' => {'type' => 'string'},
           'u' => {'type' => 'string', 'format' => 'uuid'},
-          'url' => {'type' => 'string', 'pattern' => '^[hH][tT][tT][pP][sS]?://[^\t\n\v\f\r /$.?#][^\t\n\v\f\r ]*$'},
+          'url' => {'type' => 'string', 'pattern' => "^[hH][tT][tT][pP][sS\u017F]?://[^\\t\\n\\v\\f\\r /$.?#][^\\t\\n\\v\\f\\r ]*$"},
           'em' => {'type' => 'string', 'pattern' => '^[^@\t\n\v\f\r ]+@[^@\t\n\v\f\r ]+\.[^@\t\n\v\f\r ]+$'}
         )
       end
@@ -319,6 +319,18 @@ RSpec.describe FieldStruct::JSONSchema do
         expect(property(klass, :tags)).to eq('type' => 'array')
       end
 
+      it 'reads a boolean json_schema: as its object form, and refuses anything else' do
+        klass = struct('BoolOverride') do
+          optional :any, :value, json_schema: true
+          required :never, :value, json_schema: false
+        end
+
+        expect(property(klass, :any)).to eq({})
+        expect(property(klass, :never)).to eq('not' => {})
+        bad = struct('BadOverride') { optional :t, :string, json_schema: [1] }
+        expect { bad.to_json_schema }.to raise_error(ArgumentError, /json_schema: must be a Hash or a boolean, got \[1\]/)
+      end
+
       it "uses a custom type's #json_schema, else names its Ruby type" do
         money = Class.new(FieldStruct::Types::Base) do
           def coerce(value, **) = value
@@ -490,11 +502,13 @@ RSpec.describe FieldStruct::JSONSchema do
     klass = struct('Thing') { required :name, :string }
 
     expect { klass.to_json_schema(serialization: nil) }.to raise_error(ArgumentError, /serialization: to be a Symbol/)
+    expect(klass.to_json_schema(serialization: 'json')).to eq(klass.to_json_schema)
     expect { described_class.pattern_for('abc') }.to raise_error(ArgumentError, /expects a Regexp, got "abc"/)
   end
 
-  # Every pattern here was checked against Node's RegExp, with and without
-  # the u flag, on the same samples as Ruby (PR #18).
+  # Every pattern here was checked against Node's RegExp under the u flag, on
+  # the same samples as Ruby, including \u017F, K, ß, astral and newline cases
+  # (PR #18).
   describe '.pattern_for' do
     {
       /\A\d+\.\d+\.\d+\z/ => '^\d+\.\d+\.\d+$',
@@ -502,12 +516,16 @@ RSpec.describe FieldStruct::JSONSchema do
       Regexp.new('\A[\w\-]+\z') => '^[\w\-]+$',
       /\Aabc.\z/ => '^abc[^\n]$',
       /\A\s\S\z/ => '^[\t\n\v\f\r ][^\t\n\v\f\r ]$',
-      /^foo$/ => '(?<![^\n])foo(?![^\n])',
+      /^foo$/ => '(?:^|(?<=\n)(?!$))foo(?![^\n])',
       Regexp.new(['\Aa}b', ']c{d\z'].join) => '^a\}b\]c\{d$', # lone } ] { are literal in Ruby
       /\A\h{2}\z/i => '^[0-9a-fA-F]{2}$',
-      /\Aok\z/i => '^[oO][kK]$',
+      /\Aok\z/i => "^[oO][kK\u212A]$", # Ruby's /i also matches the Kelvin sign
       /\A[a-f8]\z/i => '^[a-fA-F8]$',
-      /\A(?<y>\d)\k<y>(?<=1)\z/ => '^(?<y>\d)\k<y>(?<=1)$'
+      /\A[^r-t]+\z/i => "^[^r-tR-T\u017F]+$",
+      /\A(?<y>\d)(?<=1)\z/ => '^(?<y>\d)(?<=1)$',
+      /\Ayes\z/i => "^[yY][eE][sS\u017F]$",
+      /\Aa{2,3}?b\z/ => '^a{2,3}?b$',
+      /\A😀+\z/ => '^(?:😀)+$'
     }.each do |regexp, pattern|
       it "translates #{regexp.inspect}" do
         expect(described_class.pattern_for(regexp)).to eq(pattern)
@@ -515,7 +533,12 @@ RSpec.describe FieldStruct::JSONSchema do
     end
 
     [/\A(?#c)a\z/, /\Aa{,3}\z/, /\A[a-z&&[^aeiou]]\z/, /\A(?<d>\d)\g<d>\z/, /\A(?a)\w\z/, /\A\e\z/, Regexp.new('\A[\A]\z'),
-     /\A\p{L}\z/, /\A[[:alpha:]]\z/, /\Aa++\z/, /\Aa{2}+\z/, /\A(?>a)\z/, /\Aa\Z/, /\A[0-z]\z/i, /a/x, /a/m].each do |regexp|
+     /\A\p{L}\z/, /\A[[:alpha:]]\z/, /\Aa++\z/, /\Aa{2}+\z/, /\A(?>a)\z/, /\Aa\Z/, /\A[0-z]\z/i, /a/x, /a/m,
+     # Each of these matched different strings in Ruby and JavaScript (PR #18, second review).
+     /\Afile\z/i, /\Aé\z/i, /\A\x41\z/i, /\A[!-~]\z/i, Regexp.new('\A[\\\\-f]\z', Regexp::IGNORECASE),
+     /\A(a)\1\z/, /\A(?<q>a)\k<q>\z/, /\Aa{2}?\z/, Regexp.new('\Aa**\z'), /\A(?=a)*a\z/, Regexp.new('\A\01\z'),
+     Regexp.new('\A\xC3\xA9\z', Regexp::NOENCODING), Regexp.new('\A[]a]\z'), Regexp.new('\A[😀]\z'), Regexp.new('\A[\t-~]\z', Regexp::IGNORECASE),
+     /\A(?:(?<n>a)|(?<n>b))\z/].each do |regexp|
       it "gives up on #{regexp.inspect}" do
         expect(described_class.pattern_for(regexp)).to be_nil
       end

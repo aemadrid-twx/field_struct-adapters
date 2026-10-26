@@ -82,18 +82,20 @@ module FieldStruct
     # Generate the JSON Schema for a FieldStruct subclass.
     #
     # @param klass [Class<FieldStruct::Base>]
-    # @param serialization [Symbol] the +serialize+ format whose external
+    # @param serialization [Symbol, String] the +serialize+ format whose external
     #   names become property names (an undeclared format uses the field
     #   names, as its serializer does)
     # @return [Hash{String=>Object}] the schema, with String keys, ready for
     #   +Oj.dump+. It's a fresh copy: changing it doesn't touch the class.
     # @raise [ArgumentError] when +klass+ is not a {FieldStruct::Base}
-    #   subclass, or +serialization+ is not a Symbol
+    #   subclass, or +serialization+ is not a Symbol or String
     def self.generate(klass, serialization: :json)
       unless klass.is_a?(::Class) && klass < FieldStruct::Base
         raise ArgumentError,
           "FieldStruct::JSONSchema.generate expects a FieldStruct::Base subclass, got #{klass.inspect}"
       end
+      # +serialize 'json', …+ declares the format as a Symbol, so a String names it too.
+      serialization = serialization.to_sym if serialization.is_a?(::String)
       unless serialization.is_a?(::Symbol)
         raise ArgumentError,
           "FieldStruct::JSONSchema.generate expects serialization: to be a Symbol, got #{serialization.inspect}"
@@ -178,7 +180,7 @@ module FieldStruct
       # @param field [Field]
       # @return [Hash{String=>Object}]
       def property_schema(field)
-        override = field.options[:json_schema] || field.type_instance.json_schema
+        override = override(field.options[:json_schema]) || override(field.type_instance.json_schema)
         schema = override || value_schema(field.type_instance, field.options)
         annotations(field).merge(field.required? ? schema : optional(schema, field.type_instance))
       end
@@ -257,7 +259,7 @@ module FieldStruct
         return {'type' => 'array'} if of_type.nil? || (of_type.is_a?(::Class) && of_type <= FieldStruct::Types::Union)
 
         element = of_type.is_a?(::Class) ? of_type.new : of_type
-        items = element.json_schema || value_schema(element, options[:element] || {})
+        items = override(element.json_schema) || value_schema(element, options[:element] || {})
         # Any element may be nil, a nested one too: validation skips nil elements.
         {'type' => 'array', 'items' => nullable(items)}
       end
@@ -265,7 +267,7 @@ module FieldStruct
       # @param union [Types::Union]
       # @return [Hash{String=>Object}] +{}+ when a member accepts anything
       def union_schema(union)
-        members = union.member_types.map { |member| member.json_schema || value_schema(member, {}) }
+        members = union.member_types.map { |member| override(member.json_schema) || value_schema(member, {}) }
         return {} if members.include?({})
 
         {'anyOf' => members.uniq}
@@ -395,6 +397,21 @@ module FieldStruct
         ruby_type = type.ruby_type
         names = Array(ruby_type).map { |klass| klass.name || klass.inspect }
         {'x-ruby-type' => names.join(' | ')}
+      end
+
+      # A +json_schema:+ override (field option or {Types::Base#json_schema})
+      # as a Hash: the boolean schemas become their object forms.
+      #
+      # @param value [Hash{String=>Object}, Boolean, nil]
+      # @return [Hash{String=>Object}, nil]
+      # @raise [ArgumentError] for anything else
+      def override(value)
+        case value
+        when nil, ::Hash then value
+        when true then {}
+        when false then {'not' => {}}
+        else raise ArgumentError, "json_schema: must be a Hash or a boolean, got #{value.inspect}"
+        end
       end
 
       # @param schema [Hash{String=>Object}]
