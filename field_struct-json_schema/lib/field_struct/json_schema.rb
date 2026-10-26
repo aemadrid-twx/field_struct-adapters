@@ -105,7 +105,7 @@ module FieldStruct
     end
 
     # Translate a Regexp to an ECMA-262 +pattern+ string that matches the
-    # same strings, with or without the +u+ flag. See {Pattern} for the rules.
+    # same strings under the +u+ flag. See {Pattern} for the rules.
     #
     #   FieldStruct::JSONSchema.pattern_for(/\A\d+\.\d+\z/)  # => "^\\d+\\.\\d+$"
     #   FieldStruct::JSONSchema.pattern_for(/\A\h+\z/i)      # => "^[0-9a-fA-F]+$"
