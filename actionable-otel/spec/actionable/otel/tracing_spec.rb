@@ -29,7 +29,10 @@ RSpec.describe 'Actionable::Otel',
   skip: (otel_loaded ? false : 'opentelemetry not installed (BUNDLE_GEMFILE=gemfiles/otel.gemfile)') do
   before { OTEL_SPEC_EXPORTER.reset }
 
-  after { Actionable::Otel.step_spans = true }
+  after do
+    Actionable::Otel.step_spans = true
+    Actionable::Otel.exception_details = :type_only
+  end
 
   let(:spans) { OTEL_SPEC_EXPORTER.finished_spans }
 
@@ -121,19 +124,43 @@ RSpec.describe 'Actionable::Otel',
       expect(spans.map(&:name)).to eq(['Typed.run'])
     end
 
-    it 'records an escaping exception on both spans and re-raises it' do
+    it 'records an escaping exception once, on the run span, by type only, and re-raises it' do
+      stub_const('Boom', Class.new(Actionable::Action) do
+        input { required :card, :string }
+        step :go
+        def go = raise(ArgumentError, "gateway refused card #{input.card}")
+      end)
+
+      expect { Boom.run(card: '4111111111111111') }.to raise_error(ArgumentError, /4111/)
+      run_span = span_named('Boom.run')
+      step_span = span_named('Boom/go')
+      expect([error?(run_span), error?(step_span)]).to eq([true, true])
+      expect(run_span.events.map { |event| [event.name, event.attributes] })
+        .to eq([['exception', {'exception.type' => 'ArgumentError'}]])
+      expect(step_span.events).to be_nil
+      expect(run_span.attributes).not_to have_key('actionable.outcome')
+      expect(spans.inspect).not_to include('4111')
+    end
+
+    it 'records the message and backtrace too under exception_details = :full' do
+      Actionable::Otel.exception_details = :full
       stub_const('Boom', Class.new(Actionable::Action) do
         step :go
         def go = raise(ArgumentError, 'bad')
       end)
 
       expect { Boom.run }.to raise_error(ArgumentError, 'bad')
-      %w[Boom.run Boom/go].each do |name|
-        span = span_named(name)
-        expect(error?(span)).to be(true)
-        expect(span.events.map(&:name)).to eq(['exception'])
-      end
-      expect(span_named('Boom.run').attributes).not_to have_key('actionable.outcome')
+      events = span_named('Boom.run').events
+      expect(events.size).to eq(1)
+      event = events.first
+      expect(event.attributes).to include('exception.type' => 'ArgumentError', 'exception.message' => 'bad',
+        'exception.stacktrace' => a_string_including('tracing_spec.rb'))
+      expect(span_named('Boom/go').events).to be_nil
+    end
+
+    it 'refuses an unknown exception_details level' do
+      expect { Actionable::Otel.exception_details = :message }
+        .to raise_error(ArgumentError, /must be :type_only or :full, got :message/)
     end
   end
 
@@ -164,6 +191,29 @@ RSpec.describe 'Actionable::Otel',
       expect(children.map { |span| span.attributes['actionable.section'] }).to eq(%w[main main success always])
       expect(children.map { |span| span.attributes['actionable.step'] }).to eq(%w[reserve charge notify audit])
       expect(children.map { |span| span.attributes['actionable.action'] }.uniq).to eq(['Checkout'])
+    end
+
+    it "says each step's kind; a case step's span is named after its value method" do
+      stub_const('Child', Class.new(Actionable::Action) do
+        step :go
+        def go = nil
+      end)
+      stub_const('Router', Class.new(Actionable::Action) do
+        step :prepare
+        step Child
+        case_step :mode do
+          on 'fast', :go_fast
+        end
+
+        def prepare = nil
+        def mode = 'fast'
+        def go_fast = nil
+      end)
+      Router.run
+
+      kinds = %w[Router/prepare Router/Child Router/mode].map { |name| span_named(name).attributes['actionable.step.kind'] }
+      expect(kinds).to eq(%w[method action case])
+      expect(spans.map(&:name)).not_to include('Router/go_fast')
     end
 
     it 'puts the code on a step span only when that step recorded the result' do
