@@ -2,7 +2,7 @@
 
 Apache Avro for [FieldStruct](https://github.com/aemadrid-twx/field_struct) classes: a record schema per class, and instances to and from Avro binary, without losing decimals, 64-bit integers, sub-millisecond times or enum symbols.
 
-> **Status: local draft (0.1.0), not published.** It needs `FieldStruct::Introspection`, which is unreleased (aemadrid-twx/field_struct#23). The defaults below are proposals waiting on a decision; see [Open decisions](#open-decisions).
+> **Status: local draft (0.1.0), not published.** It needs `FieldStruct::Introspection`, merged to field_struct `develop` (#23) but unreleased. The defaults below are proposals waiting on a decision; see [Open decisions](#open-decisions).
 
 ```ruby
 require 'field_struct/avro'

@@ -4,8 +4,8 @@ source 'https://rubygems.org'
 
 gemspec
 
-# FieldStruct::Introspection is unreleased: aemadrid-twx/field_struct#23.
-gem 'field_struct', git: 'https://github.com/aemadrid-twx/field_struct', branch: 'feat/schema-walk'
+# FieldStruct::Introspection is merged to develop (aemadrid-twx/field_struct#23) but unreleased.
+gem 'field_struct', git: 'https://github.com/aemadrid-twx/field_struct', branch: 'develop'
 
 gem 'rake', '~> 13.0'
 gem 'rspec', '~> 3.13'
