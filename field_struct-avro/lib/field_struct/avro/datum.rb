@@ -57,6 +57,14 @@ module FieldStruct
         end
       end
 
+      # A +:value+ field's JSON that doesn't parse.
+      class Unparsed < Located
+        # @param error [Exception] Oj's, whose message quotes the text
+        def initialize(error)
+          super("holds :value JSON that doesn't parse (#{error.class})")
+        end
+      end
+
       # A symbol the reader's enum doesn't have.
       class Unknown < Located
         # @return [::Symbol]
@@ -74,7 +82,7 @@ module FieldStruct
           "FieldStruct::Avro: #{label} is #{sensitive ? "a sensitive symbol" : symbol.inspect}, which #{message}"
         end
       end
-      private_constant :Located, :Imprecise, :Unknown
+      private_constant :Located, :Imprecise, :Unparsed, :Unknown
 
       # @param serialization [Symbol]
       # @param timestamp [Symbol, nil] the precision {#dump} checks times
@@ -96,7 +104,7 @@ module FieldStruct
         dump_struct(struct)
       rescue Located => e
         # An anonymous root: nothing named above it.
-        raise ArgumentError, e.final("#{struct.class.inspect}##{e.path.join(".")}")
+        raise ArgumentError, e.final("#{struct.class.inspect}##{e.path.join(".")}"), cause: e.cause
       end
 
       # @param struct [FieldStruct::Base]
@@ -112,7 +120,7 @@ module FieldStruct
           e.path.unshift(property.field.name)
           raise e unless Introspection.named?(klass)
 
-          raise ArgumentError, e.final("#{klass.name}##{e.path.join(".")}")
+          raise ArgumentError, e.final("#{klass.name}##{e.path.join(".")}"), cause: e.cause
         end
       end
       private :dump_struct
@@ -124,7 +132,7 @@ module FieldStruct
       def load(klass, datum)
         load_struct(klass, datum)
       rescue Located => e
-        raise ArgumentError, e.final("#{klass.inspect}##{e.path.join(".")}")
+        raise ArgumentError, e.final("#{klass.inspect}##{e.path.join(".")}"), cause: e.cause
       end
 
       private
@@ -145,7 +153,7 @@ module FieldStruct
           e.path.unshift(property.field.name)
           raise e unless Introspection.named?(klass)
 
-          raise ArgumentError, e.final("#{klass.name}##{e.path.join(".")}")
+          raise ArgumentError, e.final("#{klass.name}##{e.path.join(".")}"), cause: e.cause
         end)
       end
 
@@ -350,7 +358,7 @@ module FieldStruct
       def load_scalar(value, node, avro)
         case node.type
         when FieldStruct::Types::Time, FieldStruct::Types::DateTime then rezone(value, node.options[:zone])
-        when FieldStruct::Types::Value then Oj.load(value, JSON_LOAD)
+        when FieldStruct::Types::Value then json(value)
         when FieldStruct::Types::Symbol
           # The avro gem hands back a writer's symbol the reader's enum lacks
           # (the Avro spec says to fail), and the instance would fail valid?.
@@ -363,6 +371,18 @@ module FieldStruct
           raise Unknown, value.to_sym
         else value
         end
+      end
+
+      # Oj's error quotes the text, which can hold anything; the message
+      # names the field instead, and Oj's error isn't kept as the cause.
+      #
+      # @param value [String]
+      # @return [Object]
+      # @raise [Unparsed]
+      def json(value)
+        Oj.load(value, JSON_LOAD)
+      rescue Oj::ParseError, EncodingError => e
+        raise Unparsed, e, cause: nil # Oj's message quotes the text
       end
 
       # Avro times come back in UTC; a field with +zone:+ gets them in its

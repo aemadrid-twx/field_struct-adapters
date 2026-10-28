@@ -136,6 +136,16 @@ module FieldStruct
       end
       private :writer_json
 
+      # @param json [String]
+      # @return [Object] the parsed writer schema
+      # @raise [ArgumentError] when it isn't JSON, or not an Avro schema
+      def parse_writer(json)
+        ::Avro::Schema.parse(json)
+      rescue ::MultiJSON::ParseError, ::Avro::SchemaParseError => e
+        raise ArgumentError, "FieldStruct::Avro.decode: writer_schema: isn't a valid Avro schema (#{e.class}: #{e.message})"
+      end
+      private :parse_writer
+
       # @param writer_schema [Hash{String=>Object}, String, Object] Object being an +::Avro::Schema+
       # @param reader [FieldStruct::Avro::Cache::Reader]
       # @return [Array(Object, Hash{Class<FieldStruct::Base>=>Array<String>})] the
@@ -149,7 +159,7 @@ module FieldStruct
         hit = @writers[key]
         return hit if hit
 
-        parsed = ::Avro::Schema.parse(json)
+        parsed = parse_writer(json)
         absent = Resolution.check(parsed, reader.parsed)
         # A class written under several record names skips only what all of
         # them lacked, so a value one of them carried is never dropped.

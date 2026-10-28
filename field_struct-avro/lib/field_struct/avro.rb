@@ -105,18 +105,47 @@ module FieldStruct
     # @param serialization [Symbol, String]
     # @param timestamp [Symbol]
     # @return [FieldStruct::Base]
-    # @raise [ArgumentError] as {.schema} does, and when the avro gem would
+    # @raise [ArgumentError] as {.schema} does, for bytes the avro gem can't
+    #   read or a +writer_schema:+ it can't parse, and when the avro gem would
     #   read a field as the wrong value or fail to read it (see {Resolution})
     def self.decode(klass, bytes, writer_schema: nil, serialization: :avro, timestamp: :micros)
       serialization = check(klass, serialization, timestamp)
+      raise ArgumentError, "FieldStruct::Avro.decode expects the bytes as a String, got #{bytes.class}" unless bytes.is_a?(::String)
+
       entry = CACHE.reader(klass, serialization, timestamp)
       reader = entry.parsed
       # A field the writer lacked takes field_struct's own default, which
       # the Avro default can't always express (a date, a decimal, a proc).
       writer, skip = writer_schema ? CACHE.writer(writer_schema, entry) : [reader, {}]
-      datum = ::Avro::IO::DatumReader.new(writer, reader).read(::Avro::IO::BinaryDecoder.new(StringIO.new(bytes)))
+      datum = read(klass, bytes, writer, reader, given: !writer_schema.nil?)
       Datum.new(serialization:, absent: skip).load(klass, datum)
     end
+
+    # The avro gem reads bytes that end early or don't match the writer
+    # schema into whatever error its reader trips on (EOFError,
+    # NoMethodError, a negative length's ArgumentError, a
+    # SchemaMatchException); this names the class instead. The message
+    # leaves the avro gem's text out; it stays on the error's +cause+, where
+    # it names schemas and positions, not values.
+    #
+    # @param klass [Class<FieldStruct::Base>]
+    # @param bytes [String]
+    # @param writer [Object] an +::Avro::Schema+
+    # @param reader [Object] an +::Avro::Schema+
+    # @param given [Boolean] whether the caller passed +writer_schema:+
+    # @return [Hash{String=>Object}] the datum
+    # @raise [ArgumentError]
+    def self.read(klass, bytes, writer, reader, given:)
+      ::Avro::IO::DatumReader.new(writer, reader).read(::Avro::IO::BinaryDecoder.new(StringIO.new(bytes)))
+    rescue EOFError, NoMethodError, ArgumentError, RangeError, ::Avro::AvroError => e
+      hint = if given
+               "they end early, or the writer schema given doesn't resolve against #{klass}'s (the cause says why)"
+             else
+               'they end early, or were written with another schema (pass writer_schema: for bytes from an older one)'
+             end
+      raise ArgumentError, "FieldStruct::Avro can't decode these bytes as #{klass} (#{e.class}): #{hint}"
+    end
+    private_class_method :read
 
     # Forgets every schema, datum mapping and checked writer schema built so
     # far. The cache holds each struct class it has seen, so under code
