@@ -277,6 +277,19 @@ RSpec.describe FieldStruct::Avro, 'encode and decode' do
     expect(described_class.to_datum(doc.new(payload: line.new(sku: 'a')))['payload']).to eq('{"sku":"a"}')
   end
 
+  it 'reads avro: options the same way for the schema and the bytes' do
+    stamp = struct('Opt::Stamp') { required :at, :time, avro: {timestamp: :seconds} }
+    expect { described_class.to_datum(stamp.new(at: '2026-07-01 08:00:00')) }
+      .to raise_error(ArgumentError, /avro: \{timestamp:\} must be one of \[:micros, :nanos, :millis\], got :seconds/)
+
+    %i[string].push({'type' => 'string'}, ['null', :string]).each_with_index do |spelling, index|
+      raw = struct("Opt::Raw#{index}") { required :raw, :value, avro: {type: spelling} }
+      value = raw.new(raw: {'a' => 1})
+      expect(described_class.to_datum(value)).to eq('raw' => '{"a":1}')
+      expect(round_trip(value)).to eq(value)
+    end
+  end
+
   it 'reads bytes written with an older schema, filling new fields from defaults' do
     v1 = struct('Evolve::V1') { required :id, :integer }
     old_schema = described_class.schema(v1)

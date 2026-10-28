@@ -12,8 +12,6 @@ module FieldStruct
       NANOS = {nanos: 1, micros: 1_000, millis: 1_000_000}.freeze
       # @return [Hash{Symbol=>Object}]
       JSON_LOAD = {mode: :compat, decimal_class: ::BigDecimal}.freeze
-      # @return [Hash{Symbol=>Object}] no +avro:+ options
-      NONE = {}.freeze
 
       # @param serialization [Symbol]
       # @param timestamp [Symbol]
@@ -30,7 +28,7 @@ module FieldStruct
       # @return [Hash{String=>Object}]
       def dump(struct)
         properties(struct.class).to_h do |property|
-          [property.key, dump_value(struct.public_send(property.field.name), property.node, field_avro(property))]
+          [property.key, dump_value(struct.public_send(property.field.name), property.node, Options.field(property))]
         end
       end
 
@@ -41,7 +39,7 @@ module FieldStruct
         absent = @absent.fetch(klass, nil)
         list = properties(klass)
         list = list.reject { |property| absent.include?(property.key) } if absent && !absent.empty?
-        klass.new(list.to_h { |property| [property.field.name, load_value(datum[property.key], property.node, field_avro(property))] })
+        klass.new(list.to_h { |property| [property.field.name, load_value(datum[property.key], property.node, Options.field(property))] })
       end
 
       private
@@ -64,7 +62,7 @@ module FieldStruct
         case node
         when Introspection::ArrayNode
           element = node.element
-          element_avro = nested(avro, element)
+          element_avro = Options.nested(avro)
           value.map { |item| dump_value(item, element, element_avro) }
         when Introspection::StructNode then dump(value)
         when Introspection::UnionNode then dump_union(value, node, avro)
@@ -82,7 +80,7 @@ module FieldStruct
       def dump_union(value, node, avro)
         ordered = node.members.sort_by.with_index { |candidate, index| [value_node?(candidate) ? 1 : 0, index] }
         member = ordered.find { |candidate| member_of?(value, candidate) }
-        member ? dump_value(value, member, nested(avro, member)) : value
+        member ? dump_value(value, member, Options.nested(avro)) : value
       end
 
       # @param node [Object]
@@ -140,7 +138,7 @@ module FieldStruct
       # @param avro [Hash{Symbol=>Object}]
       # @return [Boolean] whether the decimal travels as an Avro decimal
       def decimal?(node, avro)
-        !avro.fetch(:scale) { node.options.fetch(:round) { node.type.class.default_round } }.nil?
+        !Options.scale(avro, node.options, node.type).nil?
       end
 
       # @param time [::Time]
@@ -148,40 +146,11 @@ module FieldStruct
       # @return [::Time]
       # @raise [ArgumentError] when the precision would drop part of +time+
       def exact_time(time, avro)
-        precision = avro.fetch(:timestamp, @timestamp)
+        precision = Options.timestamp(avro, @timestamp)
         return time if (time.nsec % NANOS.fetch(precision)).zero?
 
         raise ArgumentError, "FieldStruct::Avro: #{time.iso8601(9)} has more precision than timestamp-#{precision}; " \
                              'round it, or use timestamp: :nanos'
-      end
-
-      # @param property [FieldStruct::Introspection::Property]
-      # @return [Hash{Symbol=>Object}] the field's +avro:+ option, whatever
-      #   its node (a struct or union node carries no options of its own)
-      def field_avro(property)
-        options = property.field.options[:avro]
-        options.is_a?(::Hash) ? options : NONE
-      end
-
-      # An array's elements and a union's members take the field's +avro:+
-      # options, under any of their own, except +:type+, which replaces only
-      # the field it was given on.
-      #
-      # @param avro [Hash{Symbol=>Object}] the enclosing node's options
-      # @param node [Object]
-      # @return [Hash{Symbol=>Object}]
-      def nested(avro, node)
-        own = avro_options(node)
-        return avro if own.empty? && !avro.key?(:type)
-
-        avro.except(:type).merge(own)
-      end
-
-      # @param node [Object]
-      # @return [Hash{Symbol=>Object}]
-      def avro_options(node)
-        options = node.respond_to?(:options) ? node.options[:avro] : nil
-        options.is_a?(::Hash) ? options : NONE
       end
 
       # A field whose +avro: {type:}+ replaces its mapping: the user chose the
@@ -194,7 +163,7 @@ module FieldStruct
         return false unless avro.key?(:type)
 
         # A :value overridden to (nullable) string still holds JSON text.
-        !(value_node?(node) && (Array(avro[:type]) - ['null']) == ['string'])
+        !(value_node?(node) && Options.string?(Options.type(avro)))
       end
 
       # @param value [Object]
@@ -240,7 +209,7 @@ module FieldStruct
         case node
         when Introspection::ArrayNode
           element = node.element
-          element_avro = nested(avro, element)
+          element_avro = Options.nested(avro)
           value.map { |item| load_value(item, element, element_avro) }
         when Introspection::StructNode then load(node.klass, value)
         when Introspection::UnionNode then load_union(value, node)
