@@ -89,10 +89,12 @@ module FieldStruct
       io.string
     rescue ::Avro::IO::AvroTypeError
       # Only on the error path: an invalid instance says which fields, where
-      # the avro gem names a value (sensitive or not) and no field.
+      # the avro gem names a value (sensitive or not) and no field. The
+      # gem's error isn't kept as the cause, since it quotes that value.
       raise if struct.valid?
 
-      raise ArgumentError, "FieldStruct::Avro can't encode an invalid #{struct.class}: #{struct.errors.full_messages.join("; ")}"
+      raise ArgumentError, "FieldStruct::Avro can't encode an invalid #{struct.class}: #{struct.errors.full_messages.join("; ")}",
+            cause: nil
     end
 
     # @param klass [Class<FieldStruct::Base>]

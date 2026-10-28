@@ -565,7 +565,12 @@ RSpec.describe FieldStruct::Avro, 'encode and decode' do
     expect { described_class.encode(klass.new(id: 'abc', pin: 1234)) }.to raise_error(ArgumentError) { |error|
       expect(error.message).to start_with("FieldStruct::Avro can't encode an invalid Signup: Id could not be coerced")
       expect(error.message).not_to include('abc')
-      expect(error.cause).to be_a(Avro::IO::AvroTypeError)
+      expect(error.cause).to be_nil # the avro gem's error quotes the value
+    }
+    lock = struct('Lock') { required :pin, :integer, sensitive: true }
+    expect { described_class.encode(lock.new(pin: 'hunter2')) }.to raise_error(ArgumentError) { |error|
+      expect(error.message).to start_with("FieldStruct::Avro can't encode an invalid Lock: Pin")
+      expect(error.full_message).not_to include('hunter2')
     }
     expect { described_class.encode(klass.new(pin: 'x')) }
       .to raise_error(ArgumentError, "FieldStruct::Avro can't encode an invalid Signup: Id is required")
