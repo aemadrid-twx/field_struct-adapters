@@ -152,4 +152,17 @@ RSpec.describe FieldStruct::Avro::Cache do
     results = Array.new(8) { Thread.new { Array.new(100) { round_trip(value) == value }.all? } }.map(&:value)
     expect(results).to all(be(true))
   end
+
+  it 'rebuilds after clear_cache, giving the same schema and bytes' do
+    klass = struct('Cleared') { required :id, :integer }
+    instance = klass.new(id: 7)
+    schema = FieldStruct::Avro.schema(klass)
+    bytes = FieldStruct::Avro.encode(instance)
+    expect(FieldStruct::Avro::SchemaBuilder).to receive(:new).once.and_call_original
+
+    expect(FieldStruct::Avro.clear_cache).to be_nil
+    expect(FieldStruct::Avro.schema(klass)).to eq(schema)
+    expect(FieldStruct::Avro.encode(instance)).to eq(bytes)
+    expect(round_trip(instance)).to eq(instance)
+  end
 end
