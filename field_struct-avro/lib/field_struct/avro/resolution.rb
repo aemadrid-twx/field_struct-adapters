@@ -7,7 +7,8 @@ module FieldStruct
     # written with scale 2 and read with scale 3, or a timestamp written in
     # micros and read in nanos, decodes without an error into the wrong
     # value. This walks both schemas the way resolution pairs them and raises
-    # instead.
+    # instead. Only the logical types the avro gem decodes count (decimal,
+    # date, the timestamps): a +uuid+ is a plain string on the wire.
     #
     # @api private
     class Resolution
@@ -20,7 +21,7 @@ module FieldStruct
         return if problems.empty?
 
         raise ArgumentError, "FieldStruct::Avro can't read these bytes: #{problems.join("; ")}. " \
-                             'A changed decimal scale or timestamp precision is not a compatible schema change'
+                             'The avro gem would decode them as the wrong value; this is not a compatible schema change'
       end
 
       # @param writer [Object] an +::Avro::Schema+
@@ -35,7 +36,7 @@ module FieldStruct
         elsif writer.type_sym == :union
           return writer.schemas.flat_map { |branch| compare(branch, reader, path, seen) }
         end
-        return [] unless writer.type_sym == reader.type_sym
+        return promoted(writer, reader, path) unless writer.type_sym == reader.type_sym
 
         case reader.type_sym
         when :record then record(writer, reader, path, seen)
@@ -85,6 +86,26 @@ module FieldStruct
         end
       end
 
+      # Avro promotes string and bytes into each other, so a decimal (bytes)
+      # read as a string, or the reverse, decodes into the wrong value.
+      #
+      # @param writer [Object] an +::Avro::Schema+
+      # @param reader [Object] an +::Avro::Schema+
+      # @param path [String]
+      # @return [Array<String>]
+      def promoted(writer, reader, path)
+        pair = [writer.type_sym, reader.type_sym].sort
+        return [] unless pair == %i[bytes string] && [writer, reader].any? { |schema| decoded(schema) }
+
+        ["#{path}: written as #{describe(writer)}, read as #{describe(reader)}"]
+      end
+
+      # @param schema [Object] an +::Avro::Schema+
+      # @return [String, nil] its logical type, when the avro gem decodes it
+      def decoded(schema)
+        schema.logical_type if ::Avro::LogicalTypes::TYPES.dig(schema.type, schema.logical_type)
+      end
+
       # @param writer [Object] an +::Avro::Schema+
       # @param reader [Object] an +::Avro::Schema+
       # @param path [String]
@@ -98,8 +119,8 @@ module FieldStruct
       # @param schema [Object] an +::Avro::Schema+
       # @return [String]
       def describe(schema)
-        name = schema.logical_type || schema.type_sym.to_s
-        return name unless schema.logical_type == 'decimal'
+        name = decoded(schema) || schema.type_sym.to_s
+        return name unless name == 'decimal'
 
         "#{name} (precision #{schema.precision}, scale #{schema.scale || 0})"
       end

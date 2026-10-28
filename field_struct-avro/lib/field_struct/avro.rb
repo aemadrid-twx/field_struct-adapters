@@ -83,11 +83,11 @@ module FieldStruct
     # @param bytes [String] binary from {.encode}
     # @param writer_schema [Hash{String=>Object}, String, nil] the schema the bytes were
     #   written with, when it differs from +klass+'s (Avro resolves the two)
-    # @raise [ArgumentError] when a field's decimal scale or precision, or its
-    #   timestamp precision, differs between the two schemas
     # @param serialization [Symbol]
     # @param timestamp [Symbol]
     # @return [FieldStruct::Base]
+    # @raise [ArgumentError] when the avro gem would read a field as the wrong
+    #   value (see {Resolution})
     def self.decode(klass, bytes, writer_schema: nil, serialization: :avro, timestamp: :micros)
       reader = parsed_schema(klass, serialization, timestamp)
       writer = reader

@@ -199,7 +199,8 @@ module FieldStruct
     # written with scale 2 and read with scale 3, or a timestamp written in
     # micros and read in nanos, decodes without an error into the wrong
     # value. This walks both schemas the way resolution pairs them and raises
-    # instead.
+    # instead. Only the logical types the avro gem decodes count (decimal,
+    # date, the timestamps): a +uuid+ is a plain string on the wire.
     # 
     # @api private
     class Resolution
@@ -254,6 +255,21 @@ module FieldStruct
                     String path,
                     ::Array[::Array[String]] seen
                   ) -> ::Array[String]
+
+      # Avro promotes string and bytes into each other, so a decimal (bytes)
+      # read as a string, or the reverse, decodes into the wrong value.
+      # 
+      # _@param_ `writer` — an +::Avro::Schema+
+      # 
+      # _@param_ `reader` — an +::Avro::Schema+
+      # 
+      # _@param_ `path`
+      def promoted: (Object writer, Object reader, String path) -> ::Array[String]
+
+      # _@param_ `schema` — an +::Avro::Schema+
+      # 
+      # _@return_ — its logical type, when the avro gem decodes it
+      def decoded: (Object schema) -> String?
 
       # _@param_ `writer` — an +::Avro::Schema+
       # 
