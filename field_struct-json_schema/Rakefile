@@ -11,3 +11,14 @@ RSpec::Core::RakeTask.new(:spec)
 RuboCop::RakeTask.new
 
 task default: %i[spec rubocop]
+
+desc 'Compare pattern_for against Node: every translated pattern must match exactly what Ruby matches (needs node)'
+task :differential do
+  require 'open3'
+  results, ruby_status = Open3.capture2('ruby', '-Ilib', 'spec/differential/results.rb')
+  abort 'spec/differential/results.rb failed' unless ruby_status.success?
+
+  report, node_status = Open3.capture2('node', 'spec/differential/check.mjs', stdin_data: results)
+  puts report
+  abort 'pattern_for and Node disagree; see above' unless node_status.success?
+end
