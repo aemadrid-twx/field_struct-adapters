@@ -15,14 +15,19 @@ module FieldStruct
 
       # An error raised deep in {#dump_value}, before the field is known.
       # Each struct it passes through adds its field to {#path}, and the
-      # first named one (or the root) turns it into an ArgumentError naming
-      # the field as the schema builder does: Holder#inner.at. Only the error
-      # path pays for the label.
+      # first named one (or the root) sets {#label}, naming the field as the
+      # schema builder does: Holder#inner.at. It keeps going up to the root
+      # ({#dump}, {#load}), which raises an ArgumentError, so a sensitive
+      # field anywhere above it hides the value too. Only the error path pays
+      # for the label.
       class Located < ArgumentError
         # @return [Array<Symbol>] field names, outermost first
         attr_reader :path
-        # @return [Boolean] whether the innermost field is sensitive
+        # @return [Boolean] whether the field, or any field holding it, is
+        #   sensitive
         attr_accessor :sensitive
+        # @return [String, nil] the field, once a named struct has said which
+        attr_accessor :label
 
         # @param message [String]
         def initialize(message)
@@ -103,24 +108,19 @@ module FieldStruct
       def dump(struct)
         dump_struct(struct)
       rescue Located => e
-        # An anonymous root: nothing named above it.
-        raise ArgumentError, e.final("#{struct.class.inspect}##{e.path.join(".")}"), cause: e.cause
+        # The root: an anonymous one has nothing named below it to label it.
+        raise ArgumentError, e.final(e.label || "#{struct.class.inspect}##{e.path.join(".")}"), cause: e.cause
       end
 
       # @param struct [FieldStruct::Base]
       # @return [Hash{String=>Object}]
-      # @raise [ArgumentError] from a named struct, naming the field
-      # @raise [Located] from an anonymous one, for the struct holding it
+      # @raise [Located] for {#dump} to raise
       def dump_struct(struct)
         klass = struct.class
         properties(klass).to_h do |property|
           [property.key, dump_value(struct.public_send(property.field.name), property.node, Options.field(property))]
         rescue Located => e
-          e.sensitive = property.field.sensitive? if e.path.empty?
-          e.path.unshift(property.field.name)
-          raise e unless Introspection.named?(klass)
-
-          raise ArgumentError, e.final("#{klass.name}##{e.path.join(".")}"), cause: e.cause
+          raise located(e, klass, property)
         end
       end
       private :dump_struct
@@ -132,16 +132,28 @@ module FieldStruct
       def load(klass, datum)
         load_struct(klass, datum)
       rescue Located => e
-        raise ArgumentError, e.final("#{klass.inspect}##{e.path.join(".")}"), cause: e.cause
+        raise ArgumentError, e.final(e.label || "#{klass.inspect}##{e.path.join(".")}"), cause: e.cause
       end
 
       private
 
+      # @param error [Located] raised for +property+ of +klass+
+      # @param klass [Class<FieldStruct::Base>]
+      # @param property [FieldStruct::Introspection::Property]
+      # @return [Located] the same error, with the field added
+      def located(error, klass, property)
+        error.sensitive ||= property.field.sensitive?
+        return error if error.label
+
+        error.path.unshift(property.field.name)
+        error.label = "#{klass.name}##{error.path.join(".")}" if Introspection.named?(klass)
+        error
+      end
+
       # @param klass [Class<FieldStruct::Base>]
       # @param datum [Hash{String=>Object}]
       # @return [FieldStruct::Base]
-      # @raise [ArgumentError] from a named struct, naming the field
-      # @raise [Located] from an anonymous one, for the struct holding it
+      # @raise [Located] for {#load} to raise
       def load_struct(klass, datum)
         absent = @absent.fetch(klass, nil)
         list = properties(klass)
@@ -149,11 +161,7 @@ module FieldStruct
         klass.new(list.to_h do |property|
           [property.field.name, load_value(datum[property.key], property.node, Options.field(property))]
         rescue Located => e
-          e.sensitive = property.field.sensitive? if e.path.empty?
-          e.path.unshift(property.field.name)
-          raise e unless Introspection.named?(klass)
-
-          raise ArgumentError, e.final("#{klass.name}##{e.path.join(".")}"), cause: e.cause
+          raise located(e, klass, property)
         end)
       end
 

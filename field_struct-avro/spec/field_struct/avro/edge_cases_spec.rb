@@ -59,6 +59,30 @@ RSpec.describe FieldStruct::Avro, 'edge cases' do
     expect(round_trip(instance)).to eq(instance)
   end
 
+  it 'keeps every value under a sensitive struct field out of the errors, the inner struct named or not (R30)' do
+    stamp = struct('Stamp') { required :at, :time }
+    status = struct('Status') { required :s, :symbol, enum: %i[open paid] }
+    anonymous = Class.new(FieldStruct::Base) { required :at, :time }
+    vault = struct('Vault') do
+      required :stamp, stamp, sensitive: true
+      required :status, status, sensitive: true
+      optional :loose, anonymous, sensitive: true
+    end
+    late = '2026-01-01T00:00:00.000000001Z'
+
+    expect { described_class.to_datum(vault.new(stamp: {at: late}, status: {s: :open})) }
+      .to raise_error(ArgumentError, /\AFieldStruct::Avro: Stamp#at is a sensitive time, which/)
+    expect { described_class.to_datum(vault.new(stamp: {at: Time.at(0)}, status: {s: :open}, loose: {at: late})) }
+      .to raise_error(ArgumentError, /\AFieldStruct::Avro: Vault#loose\.at is a sensitive time, which/)
+    datum = described_class.to_datum(vault.new(stamp: {at: Time.at(0)}, status: {s: :open}))
+    expect { described_class.from_datum(vault, datum.merge('status' => {'s' => 'void'})) }
+      .to raise_error(ArgumentError, /\AFieldStruct::Avro: Status#s is a sensitive symbol, which/)
+
+    plain = struct('Plain') { required :status, status }
+    expect { described_class.from_datum(plain, {'status' => {'s' => 'void'}}) }
+      .to raise_error(ArgumentError, /\AFieldStruct::Avro: Status#s is :void, which/)
+  end
+
   it "keeps a sensitive time inside an anonymous struct out of the precision error, whatever the holder field's sensitivity" do
     inner = Class.new(FieldStruct::Base) { required :at, :time, sensitive: true }
     holder = struct('Holder') { required :inner, inner }
