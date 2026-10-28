@@ -48,7 +48,7 @@ FieldStruct::Avro.decode(Billing::Invoice, bytes) == invoice  # => true
 | `:binary` | `bytes` | |
 | `:integer` | `long` | never `int`; a value past 64 bits raises |
 | `:float` | `double` | |
-| `:big_decimal, round: n` | `bytes` / `decimal`, precision 38, scale n | `avro: {precision:}`; a value that doesn't fit raises |
+| `:big_decimal, round: n` | `bytes` / `decimal`, precision 38, scale n | `avro: {precision:}`; a value that doesn't fit raises, and so does a scale above the precision. A negative `round:` is scale 0 |
 | `:big_decimal` without `round:` | `string` | there's no scale to declare |
 | `:date` | `int` / `date` | |
 | `:time`, `:datetime` | `long` / `timestamp-micros` | `timestamp: :nanos`/`:millis`, globally or `avro: {timestamp:}`; encoding raises rather than drop precision; decoding puts the field's `zone:` back |
