@@ -44,3 +44,34 @@ jobs:
           working-directory: ${{ matrix.gem }}
       - name: Specs and lint
         run: bundle exec rake
+
+  # FieldStruct::JSONSchema.pattern_for promises patterns that match exactly
+  # what the Ruby Regexp matches, under JavaScript's `u` flag. This runs the
+  # promise: a corpus of Regexps, Ruby's answers computed on each Ruby in the
+  # matrix, checked against Node's.
+  json-schema-differential:
+    runs-on: ubuntu-latest
+    name: field_struct-json_schema regexps vs Node (Ruby ${{ matrix.ruby }})
+    strategy:
+      fail-fast: false
+      matrix:
+        ruby:
+          - '3.3'
+          - '4.0'
+    defaults:
+      run:
+        working-directory: field_struct-json_schema
+    env:
+      BUNDLE_GEMFILE: ${{ github.workspace }}/field_struct-json_schema/Gemfile
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ruby/setup-ruby@7f797815d8adceb1c412e7abefdd1ab4abc47a5f # v1.335.0
+        with:
+          ruby-version: ${{ matrix.ruby }}
+          bundler-cache: true
+          working-directory: field_struct-json_schema
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+      - name: Compare pattern_for with Node
+        run: bundle exec rake differential
