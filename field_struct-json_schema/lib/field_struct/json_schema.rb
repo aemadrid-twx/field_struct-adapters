@@ -110,7 +110,7 @@ module FieldStruct
           "FieldStruct::JSONSchema.generate expects serialization: to be a Symbol, got #{serialization.inspect}"
       end
 
-      deep_copy(Builder.new(klass, serialization).schema)
+      deep_copy(CACHE.schema(klass, serialization))
     end
 
     # Translate a Regexp to an ECMA-262 +pattern+ string that matches the
@@ -138,13 +138,101 @@ module FieldStruct
     #   caller can't reach the field options the schema was built from
     def self.deep_copy(value)
       case value
-      when ::Hash then value.to_h { |key, item| [deep_copy(key), deep_copy(item)] }
+      # A Hash freezes its own copy of a String key, so the keys are already
+      # unreachable from the field options and can be shared.
+      when ::Hash then value.to_h { |key, item| [key, deep_copy(item)] }
       when ::Array then value.map { |item| deep_copy(item) }
       when ::String then value.dup
       else value
       end
     end
     private_class_method :deep_copy
+
+    # The built schema per class and serialization, so {.generate} only
+    # copies it. An entry is rebuilt when any class it covers changes its
+    # fields, serialization mapping, name or +unknown_attributes+ policy. A
+    # schema that asked a type's own +json_schema+ method is never kept:
+    # that method may answer differently next time.
+    #
+    # @api private
+    class Cache
+      # A cached schema and the stamps it is valid for.
+      class Entry
+        # @return [Hash{String=>Object}]
+        attr_reader :schema
+        # @return [Hash{Class<FieldStruct::Base>=>Array<Object>}]
+        attr_reader :stamps
+
+        # @param schema [Hash{String=>Object}]
+        # @param stamps [Hash{Class<FieldStruct::Base>=>Array<Object>}]
+        def initialize(schema, stamps)
+          @schema = schema
+          @stamps = stamps
+          freeze
+        end
+      end
+
+      def initialize
+        @entries = {}
+        @lock = Mutex.new
+      end
+
+      # @param klass [Class<FieldStruct::Base>]
+      # @param serialization [Symbol]
+      # @return [Hash{String=>Object}] frozen; callers copy it
+      def schema(klass, serialization)
+        key = [klass, serialization]
+        entry = @entries[key]
+        return entry.schema if entry && fresh?(entry.stamps, serialization)
+
+        builder = Builder.new(klass, serialization)
+        schema = deep_freeze(builder.schema)
+        return schema if builder.hooked?
+
+        stamps = builder.classes.to_h { |struct| [struct, stamp(struct, serialization)] }.freeze
+        entry = Entry.new(schema, stamps)
+        @lock.synchronize { @entries[key] = entry }
+        schema
+      end
+
+      private
+
+      # @param value [Object]
+      # @return [Object] +value+, frozen all the way down
+      def deep_freeze(value)
+        case value
+        when ::Hash
+          value.each do |key, item|
+            deep_freeze(key)
+            deep_freeze(item)
+          end
+        when ::Array then value.each { |item| deep_freeze(item) }
+        end
+        value.freeze
+      end
+
+      # @param klass [Class<FieldStruct::Base>]
+      # @param serialization [Symbol]
+      # @return [Array<Object>] the fields, mapping, name and unknown_attributes policy
+      def stamp(klass, serialization)
+        meta = klass.metadata
+        [meta.to_a.freeze, meta.serialization(serialization), klass.name, klass.unknown_attributes].freeze
+      end
+
+      # @param stamps [Hash{Class<FieldStruct::Base>=>Array<Object>}]
+      # @param serialization [Symbol]
+      # @return [Boolean]
+      def fresh?(stamps, serialization)
+        stamps.all? do |klass, (fields, mapping, name, unknown)|
+          meta = klass.metadata
+          meta.serialization(serialization).equal?(mapping) && klass.name == name &&
+            klass.unknown_attributes == unknown && meta.to_a == fields
+        end
+      end
+    end
+
+    # @return [Cache]
+    CACHE = Cache.new
 
     # Walks one root class, collecting named nested structs into +$defs+.
     # @api private
@@ -156,7 +244,18 @@ module FieldStruct
         @serialization = serialization
         @defs = {}
         @inlining = []
+        @classes = []
+        @hooked = false
       end
+
+      # @return [Boolean] whether a type's own +json_schema+ method was asked
+      def hooked?
+        @hooked
+      end
+
+      # @return [Array<Class<FieldStruct::Base>>] every class whose object
+      #   schema {#schema} built (the root, +$defs+, inlined anonymous ones)
+      attr_reader :classes
 
       # @return [Hash{String=>Object}]
       def schema
@@ -172,6 +271,7 @@ module FieldStruct
       # @param klass [Class<FieldStruct::Base>]
       # @return [Hash{String=>Object}]
       def object_schema(klass)
+        @classes << klass unless @classes.include?(klass)
         properties = {}
         required = []
         Introspection.properties(klass, serialization: @serialization).each do |property|
@@ -254,7 +354,9 @@ module FieldStruct
       #   FieldStruct::Introspection::UnionNode, FieldStruct::Introspection::StructNode]
       # @return [Hash{String=>Object}]
       def node_schema(node)
-        override(node.type.respond_to?(:json_schema) ? node.type.json_schema : nil) ||
+        hook = node.type.respond_to?(:json_schema)
+        @hooked ||= hook
+        override(hook ? node.type.json_schema : nil) ||
           case node
           when Introspection::ArrayNode then array_schema(node)
           when Introspection::UnionNode then union_schema(node)
