@@ -2,9 +2,10 @@
 
 module FieldStruct
   module Avro
-    # Keeps what {FieldStruct::Avro.encode} and {FieldStruct::Avro.decode}
-    # would otherwise rebuild on every call: the parsed reader schema of a
-    # class, and a writer schema parsed and checked against it.
+    # Keeps what {FieldStruct::Avro} would otherwise rebuild on every call:
+    # the parsed reader schema of a class and a writer schema parsed and
+    # checked against it (for +encode+ and +decode+), and a class's field
+    # list (for {Datum}, so +to_datum+ and +from_datum+ too).
     #
     # An entry remembers, for every struct class it covers, the class's Field
     # objects (in order), its serialization mapping and its name, and a hit
@@ -164,6 +165,9 @@ module FieldStruct
       end
     end
 
+    # The process-wide cache {FieldStruct::Avro}'s methods share.
+    #
+    # @api private
     # @return [FieldStruct::Avro::Cache]
     CACHE = Cache.new
   end
