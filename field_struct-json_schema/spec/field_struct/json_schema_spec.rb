@@ -22,11 +22,20 @@ RSpec.describe FieldStruct::JSONSchema do
     described_class.generate(klass)['properties'][name.to_s]
   end
 
-  describe 'FieldStruct::Base.to_json_schema' do
-    it 'returns the generated schema' do
-      klass = struct('Thing') { required :name, :string }
+  describe 'Methods' do
+    it 'adds Klass.to_json_schema, which returns the generated schema' do
+      klass = struct('Thing') do
+        include FieldStruct::JSONSchema::Methods
+
+        required :name, :string
+      end
 
       expect(klass.to_json_schema).to eq(described_class.generate(klass))
+      expect(klass.to_json_schema(serialization: :api)).to eq(described_class.generate(klass, serialization: :api))
+    end
+
+    it 'adds nothing to classes that leave it out' do
+      expect(struct('Plain') { required :name, :string }).not_to respond_to(:to_json_schema)
     end
   end
 
@@ -328,7 +337,15 @@ RSpec.describe FieldStruct::JSONSchema do
         expect(property(klass, :any)).to eq({})
         expect(property(klass, :never)).to eq('not' => {})
         bad = struct('BadOverride') { optional :t, :string, json_schema: [1] }
-        expect { bad.to_json_schema }.to raise_error(ArgumentError, /json_schema: must be a Hash or a boolean, got \[1\]/)
+        expect { described_class.generate(bad) }.to raise_error(ArgumentError, /json_schema: must be a Hash or a boolean, got \[1\]/)
+      end
+
+      it 'never builds the element of an array whose json_schema: replaces it' do
+        # Types::Nested can't be built without a struct class: reading the
+        # element would raise, so this passes only if the override wins first.
+        klass = struct('Shielded') { optional :xs, :array, of: FieldStruct::Types::Nested, json_schema: {'type' => 'array'} }
+
+        expect(property(klass, :xs)).to eq('type' => %w[array null])
       end
 
       it "uses a custom type's #json_schema, else names its Ruby type" do
@@ -366,8 +383,8 @@ RSpec.describe FieldStruct::JSONSchema do
       instance = klass.new(color: '', code: "\t", id: ' ', mail: '')
 
       expect(instance).to be_valid
-      expect(errors_for(klass.to_json_schema, instance.to_json)).to eq([])
-      expect(errors_for(klass.to_json_schema, '{"color":"blue"}')).not_to be_empty
+      expect(errors_for(described_class.generate(klass), instance.to_json)).to eq([])
+      expect(errors_for(described_class.generate(klass), '{"color":"blue"}')).not_to be_empty
     end
 
     it 'accepts a nil element in an array of nested structs' do
@@ -376,7 +393,7 @@ RSpec.describe FieldStruct::JSONSchema do
       instance = klass.new(lines: [{sku: 'x'}, nil])
 
       expect(instance).to be_valid
-      expect(errors_for(klass.to_json_schema, instance.to_json)).to eq([])
+      expect(errors_for(described_class.generate(klass), instance.to_json)).to eq([])
     end
 
     it 'describes a declared format: on uuid, url and email instead of the type default' do
@@ -387,7 +404,7 @@ RSpec.describe FieldStruct::JSONSchema do
       instance = klass.new(id: 'ABC', site: 'example.com')
 
       expect(instance).to be_valid
-      expect(errors_for(klass.to_json_schema, instance.to_json)).to eq([])
+      expect(errors_for(described_class.generate(klass), instance.to_json)).to eq([])
       expect(property(klass, :id)).to eq('type' => 'string', 'pattern' => '^[A-Z]{3}$')
     end
 
@@ -396,7 +413,7 @@ RSpec.describe FieldStruct::JSONSchema do
         required :mail, :email
         required :site, :url
       end
-      schema = klass.to_json_schema
+      schema = described_class.generate(klass)
       [%w[josé@example.com https://example.com/search?q=café], %w[me@my_host.com https://example.com/{id}],
        %w[a..b@example.com HTTPS://日本.jp/]].each do |mail, site|
         instance = klass.new(mail: mail, site: site)
@@ -412,7 +429,7 @@ RSpec.describe FieldStruct::JSONSchema do
       instance = klass.new(ids: ['not-a-uuid'])
 
       expect(instance).to be_valid
-      expect(errors_for(klass.to_json_schema, instance.to_json)).to eq([])
+      expect(errors_for(described_class.generate(klass), instance.to_json)).to eq([])
     end
 
     it 'adds null to an optional field with an override' do
@@ -426,7 +443,7 @@ RSpec.describe FieldStruct::JSONSchema do
         optional :other, :value, json_schema: {'type' => 'integer'}
       end
 
-      expect(errors_for(klass.to_json_schema, klass.new.to_json)).to eq([])
+      expect(errors_for(described_class.generate(klass), klass.new.to_json)).to eq([])
       expect(property(klass, :other)).to eq('type' => %w[integer null])
     end
 
@@ -438,7 +455,7 @@ RSpec.describe FieldStruct::JSONSchema do
         optional :kind, :symbol, default: :basic
         optional :price, :big_decimal, default: '1'
       end
-      properties = klass.to_json_schema['properties']
+      properties = described_class.generate(klass)['properties']
 
       expect(properties.transform_values { |schema| schema['default'] })
         .to eq('name' => 'x', 'label' => nil, 'ratio' => 1.0, 'kind' => 'basic', 'price' => nil)
@@ -450,7 +467,7 @@ RSpec.describe FieldStruct::JSONSchema do
       mod = Module.new
       mod.const_set(:Addr, Class.new(FieldStruct::Base) { required :city, :string })
       klass = struct('Person') { required :home, mod::Addr }
-      schema = klass.to_json_schema
+      schema = described_class.generate(klass)
 
       expect(JSONSchemer.valid_schema?(schema)).to be(true)
       expect(schema).not_to have_key('$defs')
@@ -462,7 +479,7 @@ RSpec.describe FieldStruct::JSONSchema do
         required :n, :integer, in: 0..Float::INFINITY
         required :x, :float, in: BigDecimal('0')..BigDecimal('1')
       end
-      schema = Oj.load(Oj.dump(klass.to_json_schema, mode: :compat))
+      schema = Oj.load(Oj.dump(described_class.generate(klass), mode: :compat))
 
       expect(schema['properties']['n']).to eq('type' => 'integer', 'minimum' => 0)
       expect(schema['properties']['x']).to eq('type' => 'number', 'minimum' => 0.0, 'maximum' => 1.0)
@@ -475,7 +492,7 @@ RSpec.describe FieldStruct::JSONSchema do
         optional :mixed, :array, of: :union
         optional :either, :union, of: %i[string array]
       end
-      properties = klass.to_json_schema['properties']
+      properties = described_class.generate(klass)['properties']
 
       expect(properties['grid']).to eq('type' => %w[array null], 'items' => {'type' => %w[array null]})
       expect(properties['mixed']).to eq('type' => %w[array null])
@@ -489,7 +506,7 @@ RSpec.describe FieldStruct::JSONSchema do
       required :tier, :integer, in: [1, 2]
       optional :tags, :value, default: ['a']
     end
-    schema = klass.to_json_schema
+    schema = described_class.generate(klass)
     schema['properties']['status']['enum'] << 'closed'
     schema['properties']['tier']['enum'] << 3
     schema['properties']['tags']['default'] << 'b'
@@ -501,8 +518,8 @@ RSpec.describe FieldStruct::JSONSchema do
   it 'refuses a serialization: that is not a Symbol, and a pattern_for argument that is not a Regexp' do
     klass = struct('Thing') { required :name, :string }
 
-    expect { klass.to_json_schema(serialization: nil) }.to raise_error(ArgumentError, /serialization: to be a Symbol/)
-    expect(klass.to_json_schema(serialization: 'json')).to eq(klass.to_json_schema)
+    expect { described_class.generate(klass, serialization: nil) }.to raise_error(ArgumentError, /serialization: to be a Symbol/)
+    expect(described_class.generate(klass, serialization: 'json')).to eq(described_class.generate(klass))
     expect { described_class.pattern_for('abc') }.to raise_error(ArgumentError, /expects a Regexp, got "abc"/)
   end
 

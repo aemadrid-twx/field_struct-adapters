@@ -5,6 +5,7 @@ Optional gems that connect [field_struct](https://github.com/aemadrid-twx/field_
 | Gem | What it does | Status |
 |---|---|---|
 | [field_struct-avro](field_struct-avro) | Apache Avro record schemas, and instances to and from Avro binary, for Kafka, data lakes and schema registries | 0.1.0, unreleased |
+| [field_struct-json_schema](field_struct-json_schema) | JSON Schema (draft 2020-12) of a class's JSON, for API docs, LLM tool parameters, MCP and validators in other languages | 0.1.0, unreleased |
 
 The adapters are built on `FieldStruct::Introspection`, the field walk in field_struct's core, which you can use to write your own: see [Exporting to another schema language](https://github.com/aemadrid-twx/field_struct/blob/develop/USAGE.md#exporting-to-another-schema-language).
 
@@ -15,6 +16,7 @@ Until field_struct ships Introspection in a release, install from git:
 ```ruby
 gem 'field_struct', git: 'https://github.com/aemadrid-twx/field_struct', branch: 'develop'
 gem 'field_struct-avro', git: 'https://github.com/aemadrid-twx/field_struct-adapters', glob: 'field_struct-avro/*.gemspec'
+gem 'field_struct-json_schema', git: 'https://github.com/aemadrid-twx/field_struct-adapters', glob: 'field_struct-json_schema/*.gemspec'
 ```
 
 ## Versions and releases

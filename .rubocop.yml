@@ -5,8 +5,8 @@ AllCops:
   SuggestExtensions: false
   TargetRubyVersion: 3.3
   Exclude:
-    - 'scrap/**/*'
-    - 'vendor/**/*'
+    - '**/scrap/**/*'
+    - '**/vendor/**/*'
 
 Layout/ArgumentAlignment:
   EnforcedStyle: with_fixed_indentation
@@ -67,16 +67,16 @@ Metrics/AbcSize:
 Metrics/BlockLength:
   Max: 250
   Exclude:
-    - config/**/*
-    - db/migrate/*
-    - test/**/*
-    - spec/**/*
+    - '**/config/**/*'
+    - '**/db/migrate/*'
+    - '**/test/**/*'
+    - '**/spec/**/*'
 
 Metrics/ClassLength:
   Max: 800
   Exclude:
-    - test/**/*
-    - spec/**/*
+    - '**/test/**/*'
+    - '**/spec/**/*'
 
 Metrics/CyclomaticComplexity:
   Enabled: false
@@ -84,8 +84,8 @@ Metrics/CyclomaticComplexity:
 Metrics/MethodLength:
   Max: 75
   Exclude:
-    - test/**/*
-    - spec/**/*
+    - '**/test/**/*'
+    - '**/spec/**/*'
 
 Metrics/ModuleLength:
   Max: 500

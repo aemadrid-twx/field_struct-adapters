@@ -1,5 +1,14 @@
 # frozen_string_literal: true
 
+require 'json'
+require 'field_struct'
+unless defined?(FieldStruct::Introspection)
+  raise LoadError, "field_struct-json_schema needs FieldStruct::Introspection, which field_struct #{FieldStruct::VERSION} doesn't have; " \
+                   'use a field_struct with it (develop, until the next release)'
+end
+require_relative 'json_schema/version'
+require_relative 'json_schema/pattern'
+
 module FieldStruct
   # Generates a JSON Schema (draft 2020-12) describing the JSON a
   # {FieldStruct::Base} subclass reads and writes: what +to_json+ emits for a
@@ -12,7 +21,7 @@ module FieldStruct
   #     optional :age,  :integer, in: 0..150
   #   end
   #
-  #   FieldStruct::JSONSchema.generate(User)
+  #   FieldStruct::JSONSchema.generate(User)   # or User.to_json_schema, with Methods
   #   # => {"$schema"=>"https://json-schema.org/draft/2020-12/schema",
   #   #     "title"=>"User", "type"=>"object",
   #   #     "properties"=>{"name"=>{"type"=>"string"},
@@ -51,8 +60,8 @@ module FieldStruct
   #   already a literal of the field's JSON type → +default+ (a callable,
   #   or one the setter would convert, is left out);
   #   +sensitive: true+ → +x-sensitive+ (+to_json+ still writes the value).
-  # * **Overrides:** a field's +json_schema:+ option, then the type's
-  #   {Types::Base#json_schema}, replace the derived schema of a present
+  # * **Overrides:** a field's +json_schema:+ option, then the type's own
+  #   +json_schema+ method (define one on a custom type), replace the derived schema of a present
   #   value (an optional field still adds +null+). A
   #   custom type with neither is unconstrained (+{}+) and named with
   #   +x-ruby-type+. +unknown_attributes :raise+ sets
@@ -238,14 +247,14 @@ module FieldStruct
         end
       end
 
-      # The node's schema: its type's own {Types::Base#json_schema} when it
-      # has one, else derived from the node.
+      # The node's schema: what its type's own +json_schema+ method returns,
+      # when the type defines one, else derived from the node.
       #
       # @param node [Introspection::ScalarNode, Introspection::ArrayNode,
       #   Introspection::UnionNode, Introspection::StructNode]
       # @return [Hash{String=>Object}]
       def node_schema(node)
-        override(node.type.json_schema) ||
+        override(node.type.respond_to?(:json_schema) ? node.type.json_schema : nil) ||
           case node
           when Introspection::ArrayNode then array_schema(node)
           when Introspection::UnionNode then union_schema(node)
@@ -392,7 +401,7 @@ module FieldStruct
         {'x-ruby-type' => names.join(' | ')}
       end
 
-      # A +json_schema:+ override (field option or {Types::Base#json_schema})
+      # A +json_schema:+ override (field option or the type's +json_schema+)
       # as a Hash: the boolean schemas become their object forms.
       #
       # @param value [Hash{String=>Object}, Boolean, nil]
@@ -422,6 +431,29 @@ module FieldStruct
         else
           {'anyOf' => [schema, {'type' => 'null'}]}
         end
+      end
+    end
+
+    # Adds +Klass.to_json_schema+ to the classes that include it, so a tool
+    # that asks an object for its schema (RubyLLM takes any object that
+    # responds to +to_json_schema+) can take the class itself:
+    #
+    #   class User < FieldStruct::Base
+    #     include FieldStruct::JSONSchema::Methods
+    #   end
+    #   User.to_json_schema  # same as FieldStruct::JSONSchema.generate(User)
+    module Methods
+      # @param base [Class]
+      # @return [void]
+      def self.included(base)
+        base.extend(ClassMethods)
+      end
+
+      # Class methods added by {Methods}.
+      module ClassMethods
+        # @param serialization [Symbol] see {FieldStruct::JSONSchema.generate}
+        # @return [Hash{String=>Object}]
+        def to_json_schema(serialization: :json) = FieldStruct::JSONSchema.generate(self, serialization: serialization)
       end
     end
   end
