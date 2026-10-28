@@ -617,7 +617,7 @@ module FieldStruct
       # neighbour as whole iterations, so +(?:ab)+(?:ab)+(?:ab)+x+ chains (see
       # #pair?). An unbounded one is tried whole next to one unrolled
       # iteration too, so a chain can trade iterations on one side and the
-      # last iteration's atoms on the other (+x*(?:x\d*)+\d*y+).
+      # first or last iteration's atoms on the other (+x*(?:x\d*)+\d*y+).
       #
       # @param inner [Hash] a group
       # @return [Array(Array<Hash>, Boolean)] as {#paths}
@@ -630,8 +630,11 @@ module FieldStruct
         whole = {set: inner[:set], pass: nullable?(inner) ? ANY : inner[:set], variable: true, whole: true,
                  first: inner[:alternatives].reduce(0) { |set, items| set | first(items) },
                  last: inner[:alternatives].reduce(0) { |set, items| set | first(items.reverse) },
-                 # Per alternative, the sets of the items an iteration must match.
-                 iterations: inner[:alternatives].map { |items| items.reject { |item| nullable?(item) }.map { |item| item[:set] } }}
+                 # Per alternative, the sets of the items an iteration must match, then
+                 # the set of everything it can match: an iteration taken is not empty.
+                 iterations: inner[:alternatives].map do |items|
+                   items.reject { |item| nullable?(item) }.map { |item| item[:set] } << items.reduce(0) { |set, item| set | item[:set] }
+                 end}
         whole_path = [[[whole], false]]
         return copies + whole_path unless inner[:max] == Float::INFINITY
 

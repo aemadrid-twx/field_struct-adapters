@@ -656,7 +656,9 @@ RSpec.describe FieldStruct::JSONSchema do
       /\A\d?\d?x\z/ => '^\d?\d?x$',
       # A whole group pairs with one neighbour only (fifth review).
       /\Aa*(?:ab?)+\z/ => '^a*(?:ab?)+$',
-      /\A(?:a)+(?:ab|b)+y\z/ => '^(?:a)+(?:ab|b)+y$'
+      /\A(?:a)+(?:ab|b)+y\z/ => '^(?:a)+(?:ab|b)+y$',
+      # An empty iteration of an optional group moves nothing between its neighbours (sixth review).
+      /\Aa*(?:b|)?a*y\z/ => '^a*(?:b|)?a*y$'
     }.each do |regexp, pattern|
       it "translates #{regexp.inspect}" do
         expect(described_class.pattern_for(regexp)).to eq(pattern)
