@@ -1,0 +1,347 @@
+module FieldStruct
+  # Apache Avro for FieldStruct classes: a record schema per class, and
+  # instances to and from Avro datums and binary.
+  # 
+  #   FieldStruct::Avro.schema(Invoice)        # => {"type" => "record", "name" => "Invoice", …}
+  #   bytes = FieldStruct::Avro.encode(invoice)
+  #   FieldStruct::Avro.decode(Invoice, bytes) == invoice  # => true
+  # 
+  # Every call takes the same options:
+  # 
+  # * +serialization:+ the +serialize+ format whose names become Avro field
+  #   names (default +:avro+; an undeclared format keeps the field names).
+  # * +timestamp:+ +:micros+ (default), +:nanos+ or +:millis+, the precision
+  #   of +:time+ and +:datetime+ fields. Encoding a time with more precision
+  #   than that raises rather than drop it.
+  # 
+  # A field's +avro:+ option adjusts its own mapping: +type:+ (the whole Avro
+  # type, verbatim), +timestamp:+, +precision:+ / +scale:+ for decimals,
+  # +enum: false+ (a string instead of an enum) and +enum_default:+.
+  module Avro
+    TIMESTAMPS: ::Array[Symbol]
+    VERSION: String
+
+    # The Avro record schema for +klass+, as a Hash with String keys (ready
+    # for +JSON.generate+ or a schema registry).
+    # 
+    # _@param_ `klass`
+    # 
+    # _@param_ `serialization`
+    # 
+    # _@param_ `timestamp` — +:micros+, +:nanos+ or +:millis+
+    def self.schema: (singleton(FieldStruct::Base) klass, ?serialization: Symbol, ?timestamp: Symbol) -> ::Hash[String, Object]
+
+    # _@param_ `struct`
+    # 
+    # _@param_ `serialization`
+    # 
+    # _@param_ `timestamp`
+    # 
+    # _@return_ — the Avro datum for +struct+
+    def self.to_datum: (FieldStruct::Base struct, ?serialization: Symbol, ?timestamp: Symbol) -> ::Hash[String, Object]
+
+    # _@param_ `klass`
+    # 
+    # _@param_ `datum` — as an Avro reader returns it
+    # 
+    # _@param_ `serialization`
+    def self.from_datum: (singleton(FieldStruct::Base) klass, ::Hash[String, Object] datum, ?serialization: Symbol) -> FieldStruct::Base
+
+    # _@param_ `struct`
+    # 
+    # _@param_ `serialization`
+    # 
+    # _@param_ `timestamp`
+    # 
+    # _@return_ — the Avro binary encoding, without a container or header
+    def self.encode: (FieldStruct::Base struct, ?serialization: Symbol, ?timestamp: Symbol) -> String
+
+    # _@param_ `klass`
+    # 
+    # _@param_ `bytes` — binary from {.encode}
+    # 
+    # _@param_ `writer_schema` — the schema the bytes were written with, when it differs from +klass+'s (Avro resolves the two)
+    # 
+    # _@param_ `serialization`
+    # 
+    # _@param_ `timestamp`
+    def self.decode: (
+                       singleton(FieldStruct::Base) klass,
+                       String bytes,
+                       ?writer_schema: (::Hash[String, Object] | String)?,
+                       ?serialization: Symbol,
+                       ?timestamp: Symbol
+                     ) -> FieldStruct::Base
+
+    # _@param_ `klass`
+    # 
+    # _@param_ `serialization`
+    # 
+    # _@param_ `timestamp`
+    def self.parsed_schema: (singleton(FieldStruct::Base) klass, Symbol serialization, Symbol timestamp) -> ::Avro::Schema
+
+    # _@param_ `klass`
+    # 
+    # _@param_ `timestamp`
+    def self.check: (Object klass, Object timestamp) -> void
+
+    # Opt-in class and instance methods:
+    # 
+    #   class Invoice < FieldStruct::Base
+    #     include FieldStruct::Avro::Methods
+    #   end
+    #   Invoice.to_avro_schema; invoice.to_avro; Invoice.from_avro(bytes)
+    module Methods
+      # _@param_ `base`
+      def self.included: (Class base) -> void
+
+      # _@param_ `options` — see {FieldStruct::Avro.encode}
+      def to_avro: () -> String
+
+      # Class methods added by {Methods}.
+      module ClassMethods
+        # _@param_ `options` — see {FieldStruct::Avro.schema}
+        def to_avro_schema: () -> ::Hash[String, Object]
+
+        # _@param_ `bytes`
+        # 
+        # _@param_ `options` — see {FieldStruct::Avro.decode}
+        def from_avro: (String bytes) -> FieldStruct::Base
+      end
+    end
+
+    # Converts instances to and from the datums the avro gem reads and
+    # writes, walking the same nodes as {SchemaBuilder}.
+    # 
+    # @api private
+    class Datum
+      NANOS: ::Hash[Symbol, Integer]
+      JSON_LOAD: ::Hash[Symbol, Object]
+
+      # _@param_ `serialization`
+      # 
+      # _@param_ `timestamp`
+      def initialize: (serialization: Symbol, timestamp: Symbol) -> void
+
+      # _@param_ `struct`
+      def dump: (FieldStruct::Base struct) -> ::Hash[String, Object]
+
+      # _@param_ `klass`
+      # 
+      # _@param_ `datum`
+      def load: (singleton(FieldStruct::Base) klass, ::Hash[String, Object] datum) -> FieldStruct::Base
+
+      # _@param_ `value`
+      # 
+      # _@param_ `node`
+      def dump_value: (Object value, (FieldStruct::Introspection::ScalarNode | FieldStruct::Introspection::ArrayNode | FieldStruct::Introspection::UnionNode | FieldStruct::Introspection::StructNode) node) -> Object
+
+      # _@param_ `value`
+      # 
+      # _@param_ `node`
+      def dump_union: (Object value, FieldStruct::Introspection::UnionNode node) -> Object
+
+      # _@param_ `value`
+      # 
+      # _@param_ `node`
+      def member_of?: (Object value, (FieldStruct::Introspection::ScalarNode | FieldStruct::Introspection::ArrayNode | FieldStruct::Introspection::UnionNode | FieldStruct::Introspection::StructNode) node) -> bool
+
+      # _@param_ `value`
+      # 
+      # _@param_ `node`
+      def dump_scalar: (Object value, FieldStruct::Introspection::ScalarNode node) -> Object
+
+      # _@param_ `node`
+      # 
+      # _@return_ — whether the decimal travels as an Avro decimal
+      def decimal?: (FieldStruct::Introspection::ScalarNode node) -> bool
+
+      # _@param_ `time`
+      # 
+      # _@param_ `node`
+      def exact_time: (::Time time, FieldStruct::Introspection::ScalarNode node) -> ::Time
+
+      # _@param_ `node`
+      def avro_options: (FieldStruct::Introspection::ScalarNode node) -> ::Hash[Symbol, Object]
+
+      # _@param_ `value`
+      # 
+      # _@param_ `node`
+      def load_value: (Object value, (FieldStruct::Introspection::ScalarNode | FieldStruct::Introspection::ArrayNode | FieldStruct::Introspection::UnionNode | FieldStruct::Introspection::StructNode) node) -> Object
+
+      # A record datum carries no branch name, so it loads as the struct
+      # member whose keys it has; anything else goes to the union as is.
+      # 
+      # _@param_ `value`
+      # 
+      # _@param_ `node`
+      def load_union: (Object value, FieldStruct::Introspection::UnionNode node) -> Object
+
+      # _@param_ `value`
+      # 
+      # _@param_ `node`
+      def load_scalar: (Object value, FieldStruct::Introspection::ScalarNode node) -> Object
+
+      # Avro times come back in UTC; a field with +zone:+ gets them in its
+      # zone again, as it would from a string.
+      # 
+      # _@param_ `time`
+      # 
+      # _@param_ `zone`
+      def rezone: (::Time time, String? zone) -> ::Time
+    end
+
+    # Builds one root class's record schema. A named nested struct becomes a
+    # record named after its class (+Billing::Invoice+ is +Invoice+ in
+    # namespace +Billing+), defined at first use and referenced by full name
+    # after that, so recursive structs work. An anonymous one is named
+    # +<Record>_<field>+.
+    # 
+    # @api private
+    class SchemaBuilder
+      NAME: Regexp
+      DEFAULT_PRECISION: Integer
+      UNION_SLOT: ::Hash[String, String]
+
+      # _@param_ `root`
+      # 
+      # _@param_ `serialization`
+      # 
+      # _@param_ `timestamp`
+      def initialize: (singleton(FieldStruct::Base) root, serialization: Symbol, timestamp: Symbol) -> void
+
+      def schema: () -> ::Hash[String, Object]
+
+      # _@param_ `klass`
+      # 
+      # _@param_ `anonymous_name` — the name for an anonymous struct
+      # 
+      # _@param_ `namespace` — the enclosing record's namespace
+      # 
+      # _@return_ — the record, or its full name
+      # when it is already defined
+      def record: (singleton(FieldStruct::Base) klass, String? anonymous_name, String? namespace) -> (::Hash[String, Object] | String)
+
+      # _@param_ `class_name` — +"Billing::Invoice"+
+      # 
+      # _@return_ — +["Invoice", "Billing"]+ (+nil+
+      # namespace for a top-level class)
+      def split_name: (String class_name) -> [String, String]
+
+      # _@param_ `property`
+      # 
+      # _@param_ `record_name`
+      # 
+      # _@param_ `namespace`
+      def field_schema: (FieldStruct::Introspection::Property property, String record_name, String? namespace) -> ::Hash[String, Object]
+
+      # _@param_ `node`
+      # 
+      # _@return_ — the node's +avro:+ option
+      def avro_options: ((FieldStruct::Introspection::ScalarNode | FieldStruct::Introspection::ArrayNode | FieldStruct::Introspection::UnionNode | FieldStruct::Introspection::StructNode) node) -> ::Hash[Symbol, Object]
+
+      # _@param_ `node`
+      # 
+      # _@param_ `avro` — the node's +avro:+ option
+      # 
+      # _@param_ `name` — the name for an anonymous record or an enum
+      # 
+      # _@param_ `namespace`
+      def type_for: (
+                      (FieldStruct::Introspection::ScalarNode | FieldStruct::Introspection::ArrayNode | FieldStruct::Introspection::UnionNode | FieldStruct::Introspection::StructNode) node,
+                      ::Hash[Symbol, Object] avro,
+                      String name,
+                      String? namespace
+                    ) -> (String | ::Hash[String, Object] | ::Array[Object])
+
+      # _@param_ `node`
+      # 
+      # _@param_ `name`
+      # 
+      # _@param_ `namespace`
+      def array_type: (FieldStruct::Introspection::ArrayNode node, String name, String? namespace) -> ::Hash[String, Object]
+
+      # _@param_ `node`
+      # 
+      # _@param_ `name`
+      # 
+      # _@param_ `namespace`
+      def union_type: (FieldStruct::Introspection::UnionNode node, String name, String? namespace) -> ::Array[Object]
+
+      # _@param_ `type`
+      # 
+      # _@return_ — what Avro allows once per union
+      def union_slot: ((String | ::Hash[String, Object]) _type) -> String
+
+      # _@param_ `type`
+      # 
+      # _@param_ `options`
+      # 
+      # _@param_ `avro`
+      # 
+      # _@param_ `name`
+      # 
+      # _@param_ `namespace`
+      def scalar_type: (
+                         FieldStruct::Types::Base _type,
+                         ::Hash[Symbol, Object] options,
+                         ::Hash[Symbol, Object] avro,
+                         String name,
+                         String? namespace
+                       ) -> (String | ::Hash[String, Object])
+
+      # _@param_ `avro`
+      def timestamp: (::Hash[Symbol, Object] avro) -> Symbol
+
+      # A +round:+ decimal is an Avro decimal with that scale. Without one
+      # there is no scale to declare, so the digits travel as a string.
+      # 
+      # _@param_ `type`
+      # 
+      # _@param_ `options`
+      # 
+      # _@param_ `avro`
+      def decimal_type: (FieldStruct::Types::BigDecimal _type, ::Hash[Symbol, Object] options, ::Hash[Symbol, Object] avro) -> (String | ::Hash[String, Object])
+
+      # _@param_ `options`
+      # 
+      # _@param_ `avro`
+      # 
+      # _@param_ `name`
+      # 
+      # _@param_ `namespace`
+      # 
+      # _@return_ — +nil+ when the symbols can't be
+      # Avro enum symbols, or +avro: {enum: false}+
+      def enum_type: (
+                       ::Hash[Symbol, Object] options,
+                       ::Hash[Symbol, Object] avro,
+                       String name,
+                       String? namespace
+                     ) -> ::Hash[String, Object]?
+
+      # A literal default of the field's own Avro type; anything else (a
+      # callable, a date) is left out.
+      # 
+      # _@param_ `field`
+      # 
+      # _@param_ `type`
+      def default_for: (FieldStruct::Field field, (String | ::Hash[String, Object] | ::Array[Object]) _type) -> Object?
+
+      # _@param_ `field`
+      # 
+      # _@param_ `value`
+      def string_default: (FieldStruct::Field field, Object value) -> String?
+
+      # _@param_ `type`
+      # 
+      # _@return_ — +type+ also accepting +null+, first
+      def nullable: ((String | ::Hash[String, Object] | ::Array[Object]) _type) -> ::Array[Object]
+
+      # _@param_ `name`
+      # 
+      # _@param_ `what`
+      def check_name: (String name, String what) -> void
+    end
+  end
+end

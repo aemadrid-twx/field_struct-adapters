@@ -1,0 +1,6 @@
+# The avro gem ships no signatures. This declares only the class the adapter
+# names, so sigs:validate can resolve it. Dev only: not packaged.
+module Avro
+  class Schema
+  end
+end
