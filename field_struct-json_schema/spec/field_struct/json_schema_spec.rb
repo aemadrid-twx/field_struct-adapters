@@ -419,6 +419,16 @@ RSpec.describe FieldStruct::JSONSchema do
       expect(errors_for(schema, klass.new(b: ' ').to_json)).not_to be_empty
     end
 
+    it 'adds no escape for a String type where only nil is missing' do
+      stub_const('Strict', Class.new(FieldStruct::Types::String) do
+        def missing?(value) = value.nil?
+      end)
+      klass = struct('Strictly') { optional :s, Strict, enum: %w[a] }
+
+      expect(klass.new(s: '')).not_to be_valid
+      expect(errors_for(described_class.generate(klass), '{"s":""}')).not_to be_empty
+    end
+
     it 'accepts a nil element in an array of nested structs' do
       struct('Line') { required :sku, :string }
       klass = struct('Cart') { required :lines, :array, of: Line }

@@ -40,7 +40,8 @@ module FieldStruct
   #   field with a default may be left out of the input. Optional fields
   #   accept +null+, and so does every array element (validation skips
   #   +nil+ elements). An optional String-family field with +enum:+ or a
-  #   +format:+ also accepts a blank string, which counts as missing there.
+  #   +format:+ also accepts a blank string, which counts as missing there
+  #   (for +:binary+, only an empty one).
   # * **Constraints** map where JSON Schema has a keyword: +enum:+ → +enum+,
   #   an +in:+ Range → +minimum+ / +maximum+ / +exclusiveMaximum+ (an
   #   infinite end is left open), an +in:+ Array → +enum+, a Regexp
@@ -322,7 +323,10 @@ module FieldStruct
         schema = nullable(schema)
         return schema unless type.is_a?(FieldStruct::Types::String) && schema.keys.intersect?(%w[enum pattern format])
 
-        {'anyOf' => [schema, type.missing?(' ') ? BLANK_STRING : EMPTY_STRING]}
+        if type.missing?(' ') then {'anyOf' => [schema, BLANK_STRING]}
+        elsif type.missing?('') then {'anyOf' => [schema, EMPTY_STRING]}
+        else schema
+        end
       end
 
       # @param field [FieldStruct::Field]

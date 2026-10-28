@@ -80,7 +80,7 @@ end
 
 These follow field_struct's own validation, so the schema accepts exactly what the struct does (decided 2026-10-27):
 
-- An optional string field with `enum:` or a `format:` also accepts a blank string: blank counts as missing there, so the struct is valid and `to_json` writes `""`.
+- An optional string field with `enum:` or a `format:` also accepts a blank string: blank counts as missing there, so the struct is valid and `to_json` writes `""`. A `:binary` field accepts only an empty one, since a blank binary is a value.
 - Every array element may be `null`, nested ones too: validation skips `nil` elements.
 - `:array, of: :uuid` (or `:url`, `:email`) checks nothing per element unless `element: {format: …}` says so, and the schema says the same.
 
