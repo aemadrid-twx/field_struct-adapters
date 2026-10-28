@@ -315,11 +315,13 @@ RSpec.describe FieldStruct::JSONSchema do
         klass = struct('Profile') do
           optional :plan, :string, default: 'free', description: 'Billing plan'
           optional :token, :string, sensitive: true, default: -> { 'generated' }
+          optional :api_key, :string, sensitive: true, default: 'sk-placeholder'
         end
         properties = described_class.generate(klass)['properties']
 
         expect(properties['plan']).to eq('description' => 'Billing plan', 'default' => 'free', 'type' => %w[string null])
         expect(properties['token']).to eq('x-sensitive' => true, 'type' => %w[string null])
+        expect(properties['api_key']).to eq('x-sensitive' => true, 'type' => %w[string null])
       end
 
       it "uses a field's json_schema: option verbatim" do
