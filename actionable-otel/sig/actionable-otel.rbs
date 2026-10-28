@@ -32,10 +32,11 @@ module Actionable
     # 
     #   Actionable::Otel.step_spans = false
     # 
-    # _@param_ `enabled` — +false+ to emit run spans only
+    # _@param_ `enabled` — +false+ (or +nil+) to emit run spans only
     # 
-    # _@return_ — whether step spans are now on
-    def self.step_spans=: (bool enabled) -> bool
+    # _@return_ — +enabled+, as Ruby returns from any setter;
+    # {.step_spans?} reads the setting back
+    def self.step_spans=: (bool? enabled) -> bool?
 
     # Whether each executed step and hook gets its own span.
     def self.step_spans?: () -> bool
