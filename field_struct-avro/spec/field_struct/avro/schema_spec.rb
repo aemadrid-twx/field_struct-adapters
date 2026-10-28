@@ -110,6 +110,44 @@ RSpec.describe FieldStruct::Avro, '.schema' do
     expect(fields['parent']).to eq(['null', 'Tree.Node'])
   end
 
+  it 'gives a top-level class nested in a namespace the namespace Avro gives it, so the schema parses' do
+    line = struct('Line') { required :sku, :string }
+    thing = struct('Other::Thing') { required :line, line }
+    invoice = struct('Billing::Invoice') do
+      required :line, line
+      required :thing, thing
+    end
+
+    schema = schema_of(invoice) # parses
+    expect(schema['fields'][0]['type']).to include('name' => 'Line', 'namespace' => 'Billing')
+    expect(schema['fields'][1]['type']['fields'][0]['type']).to eq('Billing.Line')
+    bytes = described_class.encode(invoice.new(line: {sku: 'a'}, thing: {line: {sku: 'b'}}))
+    expect(described_class.decode(invoice, bytes)).to eq(invoice.new(line: {sku: 'a'}, thing: {line: {sku: 'b'}}))
+  end
+
+  it "refuses what Avro names can't say: a namespace-less type from inside a namespace, or two classes on one name" do
+    line = struct('Line') { required :sku, :string }
+    thing = struct('Other::Thing') { required :line, line }
+    order = struct('Order') do
+      required :line, line
+      required :thing, thing
+    end
+    expect { described_class.schema(order) }
+      .to raise_error(ArgumentError, /Line has no namespace and is used inside Other::Thing/)
+
+    billing_line = struct('Billing::Line') { required :cents, :integer }
+    both = struct('Billing::Both') do
+      required :mine, billing_line
+      required :top, line
+    end
+    expect { described_class.schema(both) }.to raise_error(ArgumentError, /Line and Billing::Line both become Avro Billing\.Line/)
+
+    holder = struct('Outer') { required :x, :symbol, enum: %i[a b] }
+    struct('Outer_x') { required :n, :integer }
+    holder.required :y, Outer_x
+    expect { described_class.schema(holder) }.to raise_error(ArgumentError, /Outer_x and an enum both become Avro Outer_x/)
+  end
+
   it 'names an anonymous nested struct after its record and field' do
     address = Class.new(FieldStruct::Base) { required :city, :string }
     klass = struct('Person') { optional :home, address }
@@ -142,6 +180,17 @@ RSpec.describe FieldStruct::Avro, '.schema' do
       .to include('precision' => 2, 'scale' => 2)
     expect { described_class.schema(struct('Text') { required :n, :big_decimal, round: 2, avro: {precision: '12'} }) }
       .to raise_error(ArgumentError, /Text_n: decimal precision and scale must be integers, got "12" and 2/)
+  end
+
+  it 'writes a float default as a double, even when given as an integer' do
+    klass = struct('Ratio') do
+      optional :ratio, :float, default: 1
+      optional :share, :float, default: 0.25
+    end
+
+    defaults = schema_of(klass)['fields'].map { |field| field['default'] }
+    expect(defaults).to eq([1.0, 0.25])
+    expect(defaults.first).to be_a(Float)
   end
 
   it 'refuses a union of structs where an earlier one would swallow a later one' do
