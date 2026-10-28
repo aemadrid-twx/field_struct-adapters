@@ -30,6 +30,7 @@ module FieldStruct
         @serialization = serialization
         @timestamp = timestamp
         @defined = {}
+        @classes = {}
         @inlining = []
       end
 
@@ -43,19 +44,37 @@ module FieldStruct
 
       private
 
+      # A class with no module of its own takes the namespace of the record
+      # it is first defined in, as Avro would give it, and is written with
+      # that namespace and referred to by that full name everywhere after.
+      #
       # @param klass [Class<FieldStruct::Base>]
       # @param anonymous_name [String, nil] the name for an anonymous struct
       # @param namespace [String, nil] the enclosing record's namespace
       # @return [Hash{String=>Object}, String] the record, or its full name
       #   when it is already defined
-      # @raise [ArgumentError] for a recursive anonymous struct
+      # @raise [ArgumentError] for a recursive anonymous struct, or a name
+      #   Avro can't express
       def record(klass, anonymous_name, namespace)
-        name, namespace = Introspection.named?(klass) ? split_name(klass.name) : [anonymous_name, namespace]
+        named = Introspection.named?(klass)
+        return reference(klass, namespace) if named && @classes.key?(klass)
+
+        if named
+          name, own = split_name(klass.name)
+          namespace = own || namespace
+        else
+          name = anonymous_name
+        end
         full_name = [namespace, name].compact.join('.')
+        if named && @defined.key?(full_name)
+          raise ArgumentError, "FieldStruct::Avro: #{klass} and #{@defined[full_name]} both become Avro #{full_name}; " \
+                               "put #{klass} in a module"
+        end
         return full_name if @defined.key?(full_name)
         raise ArgumentError, 'FieldStruct::Avro cannot describe a recursive anonymous struct; assign it to a constant' if @inlining.include?(klass)
 
-        @defined[full_name] = true
+        @defined[full_name] = named ? klass : 'an anonymous struct'
+        @classes[klass] = full_name if named
         @inlining.push(klass)
         out = {'type' => 'record', 'name' => name}
         out['namespace'] = namespace if namespace
@@ -65,6 +84,21 @@ module FieldStruct
         out
       ensure
         @inlining.delete(klass)
+      end
+
+      # @param klass [Class<FieldStruct::Base>] a class already defined in this schema
+      # @param namespace [String, nil] the namespace the reference sits in
+      # @return [String] its full name
+      # @raise [ArgumentError] when Avro would read the name in the wrong namespace
+      def reference(klass, namespace)
+        full_name = @classes.fetch(klass)
+        return full_name if full_name.include?('.') || namespace.nil?
+
+        # A name without a dot is read in the enclosing namespace, and Avro
+        # has no way to name the null namespace from inside another one.
+        raise ArgumentError, "FieldStruct::Avro: #{klass} has no namespace and is used inside #{@inlining.last} " \
+                             "(Avro namespace #{namespace}), where Avro would read #{full_name} as #{namespace}.#{full_name}; " \
+                             "put #{klass} in a module"
       end
 
       # @param class_name [String] +"Billing::Invoice"+
@@ -270,7 +304,7 @@ module FieldStruct
         full_name = [namespace, name].compact.join('.')
         return full_name if @defined.key?(full_name)
 
-        @defined[full_name] = true
+        @defined[full_name] = 'an enum'
         out = {'type' => 'enum', 'name' => name, 'symbols' => symbols}
         out['default'] = avro[:enum_default].to_s if avro.key?(:enum_default)
         out
