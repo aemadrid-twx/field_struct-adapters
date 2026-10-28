@@ -39,6 +39,22 @@ module FieldStruct
         end
       end
 
+      # A properties entry: the list and the stamp it is valid for.
+      class Properties
+        # @return [Array<FieldStruct::Introspection::Property>]
+        attr_reader :list
+        # @return [Array<Object>] see {Cache.stamp}
+        attr_reader :stamp
+
+        # @param list [Array<FieldStruct::Introspection::Property>]
+        # @param stamp [Array<Object>]
+        def initialize(list, stamp)
+          @list = list
+          @stamp = stamp
+          freeze
+        end
+      end
+
       # Bound on writer entries, so a caller passing ever-new writer schemas
       # can't grow the cache without limit.
       # @return [Integer]
@@ -47,6 +63,7 @@ module FieldStruct
       def initialize
         @readers = {}
         @writers = {}
+        @properties = {}
         @lock = Mutex.new
       end
 
@@ -98,6 +115,24 @@ module FieldStruct
         entry
       end
 
+      # +FieldStruct::Introspection.properties+ for a class, which {Datum}
+      # asks for every instance and nested record it converts.
+      #
+      # @param klass [Class<FieldStruct::Base>]
+      # @param serialization [Symbol]
+      # @return [Array<FieldStruct::Introspection::Property>] frozen
+      def properties(klass, serialization)
+        key = [klass, serialization]
+        entry = @properties[key]
+        return entry.list if entry && current?(klass, entry.stamp, serialization)
+
+        # Stamped before reading, so a change made meanwhile is seen next time.
+        stamp = Cache.stamp(klass, serialization)
+        list = Introspection.properties(klass, serialization:).freeze
+        @lock.synchronize { @properties[key] = Properties.new(list, stamp) }
+        list
+      end
+
       # What an entry is valid for, per class: its Field objects, its
       # serialization mapping and its name.
       #
@@ -115,10 +150,17 @@ module FieldStruct
       # @param serialization [Symbol]
       # @return [Boolean]
       def fresh?(stamps, serialization)
-        stamps.all? do |klass, (fields, mapping, name)|
-          meta = klass.metadata
-          meta.serialization(serialization).equal?(mapping) && klass.name == name && meta.to_a == fields
-        end
+        stamps.all? { |klass, stamp| current?(klass, stamp, serialization) }
+      end
+
+      # @param klass [Class<FieldStruct::Base>]
+      # @param stamp [Array<Object>] see {Cache.stamp}
+      # @param serialization [Symbol]
+      # @return [Boolean]
+      def current?(klass, stamp, serialization)
+        fields, mapping, name = stamp
+        meta = klass.metadata
+        meta.serialization(serialization).equal?(mapping) && klass.name == name && meta.to_a == fields
       end
     end
 
