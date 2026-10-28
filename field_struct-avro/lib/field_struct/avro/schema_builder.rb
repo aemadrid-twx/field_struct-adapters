@@ -32,8 +32,15 @@ module FieldStruct
         @defined = {}
         @classes = {}
         @records = Hash.new { |hash, klass| hash[klass] = [] }
+        @stamps = {}
         @inlining = []
       end
+
+      # Each struct class's {Cache.stamp}, taken before the class was read,
+      # so a class changed while {#schema} ran makes the entry stale rather
+      # than a stale entry look fresh.
+      # @return [Hash{Class<FieldStruct::Base>=>Array<Object>}]
+      attr_reader :stamps
 
       # The Avro full names each struct class was written as, filled in by
       # {#schema}. An anonymous struct used in two fields has two.
@@ -62,6 +69,7 @@ module FieldStruct
       # @raise [ArgumentError] for a recursive anonymous struct, or a name
       #   Avro can't express
       def record(klass, anonymous_name, namespace)
+        @stamps[klass] ||= Cache.stamp(klass, @serialization)
         named = Introspection.named?(klass)
         return reference(klass, namespace) if named && @classes.key?(klass)
 
