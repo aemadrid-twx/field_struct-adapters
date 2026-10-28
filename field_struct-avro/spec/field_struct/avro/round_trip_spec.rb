@@ -76,6 +76,13 @@ RSpec.describe FieldStruct::Avro, 'encode and decode' do
     expect(round_trip(tick, timestamp: :nanos).at.nsec).to eq(123_456_789)
   end
 
+  it "lets an ArgumentError that isn't the timestamp check through as itself" do
+    odd = Class.new { def inspect = raise(ArgumentError, 'unrelated') }.new
+    stamp = struct('OddStamp') { required :at, :time, avro: {timestamp: odd} }
+
+    expect { described_class.to_datum(stamp.new(at: Time.now)) }.to raise_error(ArgumentError, /\Aunrelated\z/)
+  end
+
   it 'names a field inside an anonymous struct the way the schema does, as Holder#inner.at' do
     inner = Class.new(FieldStruct::Base) { required :at, :time }
     holder = struct('Holder') { required :inner, inner }
