@@ -125,7 +125,9 @@ module FieldStruct
       # _@param_ `serialization`
       # 
       # _@param_ `timestamp`
-      def initialize: (serialization: Symbol, timestamp: Symbol) -> void
+      # 
+      # _@param_ `absent` — the Avro field names a writer lacked, per struct class; {#load} leaves them out so field_struct applies its defaults
+      def initialize: (serialization: Symbol, timestamp: Symbol, ?absent: ::Hash[singleton(FieldStruct::Base), ::Array[String]]) -> void
 
       # _@param_ `struct`
       def dump: (FieldStruct::Base struct) -> ::Hash[String, Object]
@@ -271,7 +273,13 @@ module FieldStruct
       # _@param_ `writer` — an +::Avro::Schema+
       # 
       # _@param_ `reader` — an +::Avro::Schema+
-      def self.check: (Object writer, Object reader) -> void
+      # 
+      # _@return_ — for each reader record's full
+      # name, the fields the writer lacked, which the avro gem fills from
+      # the reader's defaults
+      def self.check: (Object writer, Object reader) -> ::Hash[String, ::Array[String]]
+
+      def initialize: () -> void
 
       # _@param_ `writer` — an +::Avro::Schema+
       # 
@@ -344,6 +352,8 @@ module FieldStruct
       # 
       # _@param_ `schema` — an +::Avro::Schema+
       def describe: (Object schema) -> String
+
+      attr_reader absent: ::Hash[String, ::Array[String]]
     end
 
     # Builds one root class's record schema. A named nested struct becomes a
@@ -566,6 +576,10 @@ module FieldStruct
       # 
       # _@param_ `what`
       def check_name: (String name, String what) -> void
+
+      # The Avro full names each struct class was written as, filled in by
+      # {#schema}. An anonymous struct used in two fields has two.
+      attr_reader records: ::Hash[singleton(FieldStruct::Base), ::Array[String]]
     end
   end
 end

@@ -90,14 +90,22 @@ module FieldStruct
     # @raise [ArgumentError] when the avro gem would read a field as the wrong
     #   value (see {Resolution})
     def self.decode(klass, bytes, writer_schema: nil, serialization: :avro, timestamp: :micros)
-      reader = parsed_schema(klass, serialization, timestamp)
+      check(klass, timestamp)
+      builder = SchemaBuilder.new(klass, serialization:, timestamp:)
+      reader = ::Avro::Schema.parse(JSON.generate(builder.schema))
       writer = reader
+      absent = {}
       if writer_schema
         writer = ::Avro::Schema.parse(writer_schema.is_a?(::String) ? writer_schema : JSON.generate(writer_schema))
-        Resolution.check(writer, reader)
+        absent = Resolution.check(writer, reader)
       end
       datum = ::Avro::IO::DatumReader.new(writer, reader).read(::Avro::IO::BinaryDecoder.new(StringIO.new(bytes)))
-      from_datum(klass, datum, serialization:)
+      # A field the writer lacked takes field_struct's own default, which
+      # the Avro default can't always express (a date, a decimal, a proc).
+      # A class written under several record names skips only what all of
+      # them lacked, so a value one of them carried is never dropped.
+      skip = builder.records.transform_values { |names| names.map { |name| absent.fetch(name, []) }.reduce(:&) }
+      Datum.new(serialization:, timestamp:, absent: skip).load(klass, datum)
     end
 
     # @param klass [Class<FieldStruct::Base>]

@@ -15,9 +15,13 @@ module FieldStruct
 
       # @param serialization [Symbol]
       # @param timestamp [Symbol]
-      def initialize(serialization:, timestamp:)
+      # @param absent [Hash{Class<FieldStruct::Base>=>Array<String>}] the Avro
+      #   field names a writer lacked, per struct class; {#load} leaves them
+      #   out so field_struct applies its defaults
+      def initialize(serialization:, timestamp:, absent: {})
         @serialization = serialization
         @timestamp = timestamp
+        @absent = absent
       end
 
       # @param struct [FieldStruct::Base]
@@ -32,10 +36,9 @@ module FieldStruct
       # @param datum [Hash{String=>Object}]
       # @return [FieldStruct::Base]
       def load(klass, datum)
-        attributes = Introspection.properties(klass, serialization: @serialization).to_h do |property|
-          [property.field.name, load_value(datum[property.key], property.node, field_avro(property))]
-        end
-        klass.new(attributes)
+        absent = @absent.fetch(klass, [])
+        properties = Introspection.properties(klass, serialization: @serialization).reject { |property| absent.include?(property.key) }
+        klass.new(properties.to_h { |property| [property.field.name, load_value(datum[property.key], property.node, field_avro(property))] })
       end
 
       private

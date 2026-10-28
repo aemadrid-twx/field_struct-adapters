@@ -31,8 +31,14 @@ module FieldStruct
         @timestamp = timestamp
         @defined = {}
         @classes = {}
+        @records = Hash.new { |hash, klass| hash[klass] = [] }
         @inlining = []
       end
+
+      # The Avro full names each struct class was written as, filled in by
+      # {#schema}. An anonymous struct used in two fields has two.
+      # @return [Hash{Class<FieldStruct::Base>=>Array<String>}]
+      attr_reader :records
 
       # @return [Hash{String=>Object}]
       # @raise [ArgumentError] when the root class is anonymous
@@ -75,6 +81,7 @@ module FieldStruct
 
         @defined[full_name] = named ? klass : 'an anonymous struct'
         @classes[klass] = full_name if named
+        @records[klass] << full_name
         @inlining.push(klass)
         out = {'type' => 'record', 'name' => name}
         out['namespace'] = namespace if namespace
