@@ -167,6 +167,13 @@ module FieldStruct
       # _@param_ `avro`
       def dump_scalar: (Object value, FieldStruct::Introspection::ScalarNode node, ::Hash[Symbol, Object] avro) -> Object
 
+      # A +:value+ travels as the JSON text field_struct's +to_json+ writes
+      # for it: ISO 8601 times, plain decimals. This follows field_struct's
+      # private +Base#json_value+ for a field with no +format:+.
+      # 
+      # _@param_ `value`
+      def json_value: (Object value) -> Object
+
       # _@param_ `node`
       # 
       # _@param_ `avro`

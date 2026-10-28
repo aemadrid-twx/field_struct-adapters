@@ -262,6 +262,21 @@ RSpec.describe FieldStruct::Avro, 'encode and decode' do
     expect(round_trip(tree)).to eq(tree)
   end
 
+  it "writes a :value as the same JSON text field_struct's to_json does" do
+    line = struct('Vj::Line') { required :sku, :string }
+    doc = struct('Vj::Doc') { required :payload, :value }
+    value = doc.new(payload: {'t' => Time.utc(2026, 1, 1, 0, 0, 0.5r), 'd' => BigDecimal('1.50'), 'on' => Date.new(2026, 1, 2),
+                              's' => :x, 'line' => line.new(sku: 'a'), 'list' => [BigDecimal('2')]})
+
+    text = described_class.to_datum(value)['payload']
+    expect(JSON.parse(text)).to eq(JSON.parse(value.to_json)['payload'])
+    expect(JSON.parse(text)).to include('t' => '2026-01-01T00:00:00Z', 'd' => '1.5', 'on' => '2026-01-02', 'line' => {'sku' => 'a'}, 'list' => ['2.0'])
+    expect(round_trip(value)).to eq(doc.from_json(value.to_json))
+
+    # A struct as the whole :value goes through as_json, not its inspect text.
+    expect(described_class.to_datum(doc.new(payload: line.new(sku: 'a')))['payload']).to eq('{"sku":"a"}')
+  end
+
   it 'reads bytes written with an older schema, filling new fields from defaults' do
     v1 = struct('Evolve::V1') { required :id, :integer }
     old_schema = described_class.schema(v1)
