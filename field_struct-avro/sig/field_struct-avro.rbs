@@ -139,10 +139,16 @@ module FieldStruct
       # _@param_ `node`
       def dump_value: (Object value, (FieldStruct::Introspection::ScalarNode | FieldStruct::Introspection::ArrayNode | FieldStruct::Introspection::UnionNode | FieldStruct::Introspection::StructNode) node) -> Object
 
+      # A +:value+ member is tried last: its Ruby type is Object, so it would
+      # claim a 5 that an +:integer+ member should write as a long.
+      # 
       # _@param_ `value`
       # 
       # _@param_ `node`
       def dump_union: (Object value, FieldStruct::Introspection::UnionNode node) -> Object
+
+      # _@param_ `node`
+      def value_node?: (Object node) -> bool
 
       # _@param_ `value`
       # 
@@ -173,7 +179,9 @@ module FieldStruct
       def load_value: (Object value, (FieldStruct::Introspection::ScalarNode | FieldStruct::Introspection::ArrayNode | FieldStruct::Introspection::UnionNode | FieldStruct::Introspection::StructNode) node) -> Object
 
       # A record datum carries no branch name, so it loads as the struct
-      # member whose keys it has; anything else goes to the union as is.
+      # member whose keys it has. A text string is a +:value+ member's JSON
+      # when the union has one: only one member can be Avro +string+ (the
+      # schema refuses two). Anything else goes to the union as is.
       # 
       # _@param_ `value`
       # 
