@@ -31,7 +31,7 @@ module FieldStruct
     # _@param_ `serialization`
     # 
     # _@param_ `timestamp` — +:micros+, +:nanos+ or +:millis+
-    def self.schema: (singleton(FieldStruct::Base) klass, ?serialization: Symbol, ?timestamp: Symbol) -> ::Hash[String, Object]
+    def self.schema: (singleton(FieldStruct::Base) klass, ?serialization: (Symbol | String), ?timestamp: Symbol) -> ::Hash[String, Object]
 
     # _@param_ `struct`
     # 
@@ -40,14 +40,14 @@ module FieldStruct
     # _@param_ `timestamp`
     # 
     # _@return_ — the Avro datum for +struct+
-    def self.to_datum: (FieldStruct::Base struct, ?serialization: Symbol, ?timestamp: Symbol) -> ::Hash[String, Object]
+    def self.to_datum: (FieldStruct::Base struct, ?serialization: (Symbol | String), ?timestamp: Symbol) -> ::Hash[String, Object]
 
     # _@param_ `klass`
     # 
     # _@param_ `datum` — as an Avro reader returns it
     # 
     # _@param_ `serialization`
-    def self.from_datum: (singleton(FieldStruct::Base) klass, ::Hash[String, Object] datum, ?serialization: Symbol) -> FieldStruct::Base
+    def self.from_datum: (singleton(FieldStruct::Base) klass, ::Hash[String, Object] datum, ?serialization: (Symbol | String)) -> FieldStruct::Base
 
     # _@param_ `struct`
     # 
@@ -56,7 +56,7 @@ module FieldStruct
     # _@param_ `timestamp`
     # 
     # _@return_ — the Avro binary encoding, without a container or header
-    def self.encode: (FieldStruct::Base struct, ?serialization: Symbol, ?timestamp: Symbol) -> String
+    def self.encode: (FieldStruct::Base struct, ?serialization: (Symbol | String), ?timestamp: Symbol) -> String
 
     # _@param_ `klass`
     # 
@@ -71,7 +71,7 @@ module FieldStruct
                        singleton(FieldStruct::Base) klass,
                        String bytes,
                        ?writer_schema: (::Hash[String, Object] | String | Object)?,
-                       ?serialization: Symbol,
+                       ?serialization: (Symbol | String),
                        ?timestamp: Symbol
                      ) -> FieldStruct::Base
 
