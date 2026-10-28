@@ -222,6 +222,96 @@ module FieldStruct
       def rezone: (::Time time, String? zone) -> ::Time
     end
 
+    # Checks a writer and reader schema pair before {Avro.decode} resolves
+    # them. The avro gem matches a field by its base type only, so a decimal
+    # written with scale 2 and read with scale 3, or a timestamp written in
+    # micros and read in nanos, decodes without an error into the wrong
+    # value. This walks both schemas the way resolution pairs them and raises
+    # instead. Only the logical types the avro gem decodes count (decimal,
+    # date, the timestamps): a +uuid+ is a plain string on the wire.
+    # 
+    # @api private
+    class Resolution
+      PROMOTIONS: ::Hash[Symbol, ::Array[Symbol]]
+
+      # _@param_ `writer` — an +::Avro::Schema+
+      # 
+      # _@param_ `reader` — an +::Avro::Schema+
+      def self.check: (Object writer, Object reader) -> void
+
+      # _@param_ `writer` — an +::Avro::Schema+
+      # 
+      # _@param_ `reader` — an +::Avro::Schema+
+      # 
+      # _@param_ `path`
+      # 
+      # _@param_ `seen` — writer and reader names of the records already walked (recursive structs)
+      def compare: (
+                     Object writer,
+                     Object reader,
+                     String path,
+                     ::Array[::Array[String]] seen
+                   ) -> ::Array[String]
+
+      # _@param_ `writer` — an +::Avro::Schema+
+      # 
+      # _@param_ `reader` — an +::Avro::Schema+
+      # 
+      # _@param_ `path`
+      # 
+      # _@param_ `seen`
+      def union: (
+                   Object writer,
+                   Object reader,
+                   String path,
+                   ::Array[::Array[String]] seen
+                 ) -> ::Array[String]
+
+      # _@param_ `writer` — an +::Avro::Schema+
+      # 
+      # _@param_ `reader` — an +::Avro::Schema+
+      # 
+      # _@param_ `path`
+      # 
+      # _@param_ `seen`
+      def record: (
+                    Object writer,
+                    Object reader,
+                    String path,
+                    ::Array[::Array[String]] seen
+                  ) -> ::Array[String]
+
+      # Avro promotes a writer's int to long, float or double, a long to
+      # float or double, and string and bytes into each other. When either
+      # side is a decoded logical type, the promoted value is wrong: a date's
+      # day count read as a timestamp's micros, a decimal's bytes as text.
+      # 
+      # _@param_ `writer` — an +::Avro::Schema+
+      # 
+      # _@param_ `reader` — an +::Avro::Schema+
+      # 
+      # _@param_ `path`
+      def promoted: (Object writer, Object reader, String path) -> ::Array[String]
+
+      # _@param_ `schema` — an +::Avro::Schema+
+      # 
+      # _@return_ — its logical type, when the avro gem decodes it
+      def decoded: (Object schema) -> String?
+
+      # _@param_ `writer` — an +::Avro::Schema+
+      # 
+      # _@param_ `reader` — an +::Avro::Schema+
+      # 
+      # _@param_ `path`
+      def logical: (Object writer, Object reader, String path) -> ::Array[String]
+
+      # Precision isn't part of it: the avro gem never reads it when decoding,
+      # so widening a decimal's precision is a safe change.
+      # 
+      # _@param_ `schema` — an +::Avro::Schema+
+      def describe: (Object schema) -> String
+    end
+
     # Builds one root class's record schema. A named nested struct becomes a
     # record named after its class (+Billing::Invoice+ is +Invoice+ in
     # namespace +Billing+), defined at first use and referenced by full name

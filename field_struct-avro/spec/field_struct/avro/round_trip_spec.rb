@@ -226,6 +226,109 @@ RSpec.describe FieldStruct::Avro, 'encode and decode' do
     expect(described_class.decode(v2, bytes, writer_schema: old_schema)).to eq(v2.new(id: 7))
   end
 
+  it 'refuses bytes whose writer schema has another decimal scale or timestamp precision, instead of misreading them' do
+    v1 = struct('Evo::Money') { required :amt, :big_decimal, round: 2 }
+    v2 = struct('Evo::Money2') { required :amt, :big_decimal, round: 3 }
+    bytes = described_class.encode(v1.new(amt: '12.30'))
+    writer = described_class.schema(v1).merge('name' => 'Money2')
+
+    expect { described_class.decode(v2, bytes, writer_schema: writer) }
+      .to raise_error(ArgumentError, /amt: written as decimal \(scale 2\), read as decimal \(scale 3\)/)
+
+    tick = struct('Evo::Tick') do
+      required :at, :time
+      optional :log, :array, of: :time
+    end
+    stamp = tick.new(at: '2026-01-01T00:00:00Z', log: ['2026-01-02T00:00:00Z'])
+    micros = described_class.encode(stamp, timestamp: :micros)
+    writer = described_class.schema(tick, timestamp: :micros)
+
+    expect { described_class.decode(tick, micros, writer_schema: writer, timestamp: :nanos) }
+      .to raise_error(ArgumentError, /at: written as timestamp-micros, read as timestamp-nanos/)
+    expect(described_class.decode(tick, micros, writer_schema: writer, timestamp: :micros)).to eq(stamp)
+  end
+
+  it 'checks logical types inside arrays, unions and nested records too' do
+    line = struct('Evo::Line') { required :price, :big_decimal, round: 2 }
+    v1 = struct('Evo::Order') { optional :lines, :array, of: line }
+    writer = described_class.schema(v1)
+    writer['fields'][0]['type'][1]['items'][1]['fields'][0]['type']['scale'] = 4
+    bytes = described_class.encode(v1.new(lines: [{price: '1.25'}]))
+
+    expect { described_class.decode(v1, bytes, writer_schema: writer) }
+      .to raise_error(ArgumentError, /lines\[\]\.price: written as .*scale 4/)
+  end
+
+  it 'refuses a decimal read as a plain string or the reverse, but lets uuid and string through' do
+    exact = struct('Evo::Exact') { required :amt, :big_decimal, round: 2 }
+    loose = struct('Evo::Loose') { required :amt, :big_decimal }
+    as_decimal = described_class.encode(exact.new(amt: '12.30'))
+    as_string = described_class.encode(loose.new(amt: '12.30'))
+
+    expect { described_class.decode(loose, as_decimal, writer_schema: described_class.schema(exact).merge('name' => 'Loose')) }
+      .to raise_error(ArgumentError, /amt: written as decimal .*, read as string/)
+    expect { described_class.decode(exact, as_string, writer_schema: described_class.schema(loose).merge('name' => 'Exact')) }
+      .to raise_error(ArgumentError, /amt: written as string, read as decimal/)
+
+    # uuid has no decoder in the avro gem: the bytes are a plain string either way.
+    id = '123e4567-e89b-12d3-a456-426614174000'
+    with_uuid = struct('Evo::WithUuid') { required :id, :uuid }
+    with_string = struct('Evo::WithString') { required :id, :string }
+    bytes = described_class.encode(with_string.new(id: id))
+    writer = described_class.schema(with_string).merge('name' => 'WithUuid')
+    expect(described_class.decode(with_uuid, bytes, writer_schema: writer)).to eq(with_uuid.new(id: id))
+  end
+
+  it "lets a decimal's precision change, and refuses a date read as a time" do
+    narrow = struct('Evo::Narrow') { required :amt, :big_decimal, round: 2, avro: {precision: 12} }
+    wide = struct('Evo::Wide') { required :amt, :big_decimal, round: 2, avro: {precision: 18} }
+    bytes = described_class.encode(narrow.new(amt: '1234567890.12'))
+    writer = described_class.schema(narrow).merge('name' => 'Wide')
+    expect(described_class.decode(wide, bytes, writer_schema: writer)).to eq(wide.new(amt: '1234567890.12'))
+
+    day = struct('Evo::Day') { required :on, :date }
+    moment = struct('Evo::Moment') { required :on, :time }
+    bytes = described_class.encode(day.new(on: '2026-10-27'))
+    writer = described_class.schema(day).merge('name' => 'Moment')
+    expect { described_class.decode(moment, bytes, writer_schema: writer) }
+      .to raise_error(ArgumentError, /on: written as date, read as timestamp-micros/)
+  end
+
+  it 'checks optional fields the way the avro gem pairs their union branches' do
+    day = struct('Opt::Day') { optional :on, :date }
+    moment = struct('Opt::Moment') { optional :on, :time }
+    bytes = described_class.encode(day.new(on: '2026-10-27'))
+    expect { described_class.decode(moment, bytes, writer_schema: described_class.schema(day).merge('name' => 'Moment')) }
+      .to raise_error(ArgumentError, /on: written as date, read as timestamp-micros/)
+
+    exact = struct('Opt::Exact') { optional :amt, :big_decimal, round: 2 }
+    text = struct('Opt::Text') { optional :amt, :big_decimal }
+    bytes = described_class.encode(exact.new(amt: '12.34'))
+    expect { described_class.decode(text, bytes, writer_schema: described_class.schema(exact).merge('name' => 'Text')) }
+      .to raise_error(ArgumentError, /amt: written as decimal \(scale 2\), read as string/)
+
+    count = struct('Opt::Count') { optional :n, :integer }
+    big = struct('Opt::Big') { optional :n, :float }
+    bytes = described_class.encode(count.new(n: 7))
+    expect(described_class.decode(big, bytes, writer_schema: described_class.schema(count).merge('name' => 'Big'))).to eq(big.new(n: 7.0))
+  end
+
+  it 'checks a recursive struct once, and a field that went from optional to required' do
+    node = struct('Evo::Node') do
+      required :name, :string
+      optional :child, self
+    end
+    tree = node.new(name: 'a', child: {name: 'b'})
+    expect(described_class.decode(node, described_class.encode(tree), writer_schema: described_class.schema(node))).to eq(tree)
+
+    before = struct('Evo::Before') { optional :at, :time }
+    after = struct('Evo::After') { required :at, :time }
+    bytes = described_class.encode(before.new(at: '2026-01-01T00:00:00Z'))
+    writer = described_class.schema(before).merge('name' => 'After')
+    expect { described_class.decode(after, bytes, writer_schema: writer, timestamp: :nanos) }
+      .to raise_error(ArgumentError, /at: written as timestamp-micros, read as timestamp-nanos/)
+  end
+
   it 'round-trips many generated values' do
     klass = struct('Sample') do
       required :i, :integer
