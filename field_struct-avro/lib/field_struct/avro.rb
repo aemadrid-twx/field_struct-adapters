@@ -47,9 +47,13 @@ module FieldStruct
     # @param serialization [Symbol]
     # @param timestamp [Symbol] +:micros+, +:nanos+ or +:millis+
     # @return [Hash{String=>Object}]
-    # @raise [ArgumentError] when a field has no Avro mapping
+    # @raise [ArgumentError] when a field has no Avro mapping, or the schema
+    #   isn't valid Avro (say, a typo in an +avro: {type:}+ option)
     def self.schema(klass, serialization: :avro, timestamp: :micros)
       check(klass, timestamp)
+      # Parsing (cached) here makes a bad option fail where the schema is
+      # asked for, at boot or registration, not at the first encode.
+      CACHE.reader(klass, serialization, timestamp)
       SchemaBuilder.new(klass, serialization:, timestamp:).schema
     end
 

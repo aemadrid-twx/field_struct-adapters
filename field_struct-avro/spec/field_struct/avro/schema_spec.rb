@@ -288,4 +288,14 @@ RSpec.describe FieldStruct::Avro, '.schema' do
     expect { described_class.schema(grid) }.to raise_error(ArgumentError, /records no element type/)
     expect { described_class.schema(Class.new(FieldStruct::Base)) }.to raise_error(ArgumentError, /needs a named class/)
   end
+
+  it "refuses an avro: option the avro gem can't parse when the schema is asked for, not at the first encode" do
+    typo = struct('Typo') { required :x, :string, avro: {type: 'strng'} }
+    expect { described_class.schema(typo) }
+      .to raise_error(ArgumentError, /\AFieldStruct::Avro: Typo doesn't make a valid Avro schema .*"strng" is not a schema we know about/)
+    expect { described_class.encode(typo.new(x: 'a')) }.to raise_error(ArgumentError, /Typo doesn't make a valid Avro schema/)
+
+    stray = struct('Stray') { required :s, :symbol, enum: %i[a b], avro: {enum_default: :zzz} }
+    expect { described_class.schema(stray) }.to raise_error(ArgumentError, /Stray doesn't make a valid Avro schema.*Default 'zzz'/)
+  end
 end
