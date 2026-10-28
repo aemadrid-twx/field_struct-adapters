@@ -165,8 +165,12 @@ RSpec.describe FieldStruct::Avro, 'encode and decode' do
   end
 
   it 'passes overridden structs, symbols in arrays and hashes, and zones through correctly' do
-    line = struct('Ovr::Line') { required :sku, :string }
-    record = {'type' => 'record', 'name' => 'Line', 'namespace' => 'Ovr', 'fields' => [{'name' => 'sku', 'type' => 'string'}]}
+    line = struct('Ovr::Line') do
+      required :sku, :string
+      optional :payload, :value
+      optional :seen, :time, zone: 'America/Denver'
+    end
+    record = described_class.schema(line)
     klass = struct('Ovr::Order') do
       required :lines, :array, of: line, avro: {type: {'type' => 'array', 'items' => record}}
       required :marks, :array, of: :symbol, avro: {type: {'type' => 'array', 'items' => 'string'}}
@@ -174,14 +178,16 @@ RSpec.describe FieldStruct::Avro, 'encode and decode' do
       required :note, :value, avro: {type: %w[null string]}
       required :at, :time, zone: 'America/Denver', avro: {type: {'type' => 'long', 'logicalType' => 'timestamp-micros'}}
     end
-    order = klass.new(lines: [{sku: 'a'}], marks: %i[x y], meta: {k: :v}, note: {'n' => 1}, at: '2026-07-01 08:00:00')
+    order = klass.new(lines: [{sku: 'a', payload: {'n' => 1}, seen: '2026-07-01 08:00:00'}], marks: %i[x y], meta: {k: :v}, note: {'n' => 1}, at: '2026-07-01 08:00:00')
 
     datum = described_class.to_datum(order)
     expect(datum.slice('lines', 'marks', 'meta', 'note'))
-      .to eq('lines' => [{'sku' => 'a'}], 'marks' => %w[x y], 'meta' => {'k' => 'v'}, 'note' => '{"n":1}')
+      .to match('lines' => [hash_including('sku' => 'a', 'payload' => '{"n":1}')], 'marks' => %w[x y], 'meta' => {'k' => 'v'}, 'note' => '{"n":1}')
     back = round_trip(order)
     expect(back).to eq(klass.new(order.to_h.merge(meta: {'k' => 'v'})))
     expect(back.at.utc_offset).to eq(-6 * 3600)
+    expect(back.lines.first.payload).to eq('n' => 1)
+    expect(back.lines.first.seen.utc_offset).to eq(-6 * 3600)
   end
 
   it 'round-trips a :value member of a union as a value, not as JSON text, in either order' do

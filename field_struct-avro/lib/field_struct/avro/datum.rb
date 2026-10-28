@@ -151,16 +151,30 @@ module FieldStruct
         end
       end
 
+      # The Avro type is the user's, but what {#raw} dumped comes back the
+      # same way: structs in an array through their own mappings, a time in
+      # its zone:.
+      #
+      # @param value [Object]
+      # @param node [FieldStruct::Introspection::ScalarNode, FieldStruct::Introspection::ArrayNode]
+      # @return [Object]
+      def load_override(value, node)
+        if node.is_a?(Introspection::ArrayNode) && node.element.is_a?(Introspection::StructNode) && value.is_a?(::Array)
+          value.map { |item| item.is_a?(::Hash) ? load(node.element.klass, item) : item }
+        elsif value.is_a?(::Time)
+          rezone(value, node.options[:zone])
+        else
+          value
+        end
+      end
+
       # @param value [Object]
       # @param node [FieldStruct::Introspection::ScalarNode, FieldStruct::Introspection::ArrayNode,
       #   FieldStruct::Introspection::UnionNode, FieldStruct::Introspection::StructNode]
       # @return [Object]
       def load_value(value, node)
         return nil if value.nil?
-        if override?(node)
-          # The Avro type is the user's, but the field's zone: still applies.
-          return value.is_a?(::Time) && node.respond_to?(:type) ? rezone(value, node.options[:zone]) : value
-        end
+        return load_override(value, node) if override?(node)
 
         case node
         when Introspection::ArrayNode then value.map { |item| load_value(item, node.element) }

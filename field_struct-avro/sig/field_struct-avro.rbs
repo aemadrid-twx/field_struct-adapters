@@ -184,6 +184,15 @@ module FieldStruct
       # _@return_ — +value+, with symbols as strings (Avro has none)
       def raw: (Object value) -> Object
 
+      # The Avro type is the user's, but what {#raw} dumped comes back the
+      # same way: structs in an array through their own mappings, a time in
+      # its zone:.
+      # 
+      # _@param_ `value`
+      # 
+      # _@param_ `node`
+      def load_override: (Object value, (FieldStruct::Introspection::ScalarNode | FieldStruct::Introspection::ArrayNode) node) -> Object
+
       # _@param_ `value`
       # 
       # _@param_ `node`
