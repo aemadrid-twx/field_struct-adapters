@@ -647,7 +647,7 @@ RSpec.describe FieldStruct::JSONSchema do
      /\A(a+)+\z/, /\A(x+x+)+y\z/, /\A([^\n]*a){20}\z/, /\A(\w+\s?)+\z/, /\A((a+)b)+\z/, /\A(a?){20}\z/, /\A(a{2,3})+\z/,
      # Alternatives that can match the same text, repeated: just as exponential.
      /\A(?:a|a)+\z/, /\A(?:\w|\d)+\z/, /\A(?:a|aa)+\z/, /\A(?:a|b|ab)*\z/, /\A(?:ab|abab)+\z/, /\A(?:s|S)+\z/i,
-     /\A(?:(?:a|aa){2}b)+\z/].each do |regexp|
+     /\A(?:(?:a|aa){2}b)+\z/, /\A(?:a|aa){20}\z/, /\A(?:a|b){2}\z/].each do |regexp|
       it "gives up on #{regexp.inspect}" do
         expect(described_class.pattern_for(regexp)).to be_nil
       end
