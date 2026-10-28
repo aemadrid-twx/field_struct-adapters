@@ -118,6 +118,16 @@ module FieldStruct
       Datum.new(serialization:, absent: skip).load(klass, datum)
     end
 
+    # Forgets every schema, datum mapping and checked writer schema built so
+    # far. The cache holds each struct class it has seen, so under code
+    # reloading (Rails in development) call this on each reload; the next
+    # call rebuilds what it needs.
+    #
+    # @return [void]
+    def self.clear_cache
+      CACHE.clear
+    end
+
     # @param klass [Object]
     # @param serialization [Object]
     # @param timestamp [Object]

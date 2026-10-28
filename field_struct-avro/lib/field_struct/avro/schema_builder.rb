@@ -54,10 +54,27 @@ module FieldStruct
       def schema
         raise ArgumentError, 'FieldStruct::Avro needs a named class for the root record; assign it to a constant' unless Introspection.named?(@root)
 
-        record(@root, nil, nil)
+        out = record(@root, nil, nil)
+        check_serialization
+        out
       end
 
       private
+
+      # A +serialization:+ no struct in the tree declares would quietly use
+      # the default field names, so a typo (+:avor+) is refused. +:avro+,
+      # the default, needs no +serialize+.
+      #
+      # @raise [ArgumentError]
+      def check_serialization
+        return if @serialization == :avro
+
+        declared = @stamps.keys.flat_map { |klass| klass.metadata.serializations.keys }.uniq
+        return if declared.include?(@serialization)
+
+        raise ArgumentError, "FieldStruct::Avro: no struct in #{@root} declares serialize #{@serialization.inspect} " \
+                             "(declared: #{([:avro] + declared).uniq.inspect})"
+      end
 
       # A class with no module of its own takes the namespace of the record
       # it is first defined in, as Avro would give it, and is written with
@@ -163,6 +180,7 @@ module FieldStruct
       # @return [Hash{String=>Object}]
       def field_schema(property, record_name, namespace)
         field = property.field
+        Options.check_shape(property, @fields.last)
         check_name(property.key, "field #{@fields.last}")
         type = type_for(property.node, Options.field(property), "#{record_name}_#{property.key}", namespace)
         out = {'name' => property.key}

@@ -80,7 +80,7 @@ end
 error.start_with?("FieldStruct::Avro can't read these bytes: total: written as decimal (scale 3)") # => true
 ```
 
-`schema` builds and parses the schema, so a field option the avro gem can't parse raises there, naming the class, instead of at the first `encode`. Call it at boot, or in a test, for each root class with the options you use (`serialization:`, `timestamp:`), to find those early. A nested struct is covered by its root:
+`schema` builds and parses the schema, so a field option the avro gem can't parse raises there, naming the class, instead of at the first `encode`. Call it at boot, or in a test, for each root class with the options you use (`serialization:`, `timestamp:`), to find those early. A nested struct is covered by its root. An `avro:` option that isn't a Hash (`avro: 'string'`, `avro: false`) raises too, as does a `serialization:` that no struct the schema walks declares with `serialize` (`:avro`, the default, needs none; a struct behind an `avro: {type:}` override isn't walked):
 
 <!-- doctest -->
 ```ruby
@@ -96,6 +96,13 @@ rescue ArgumentError => e
   e.message
 end
 error.start_with?("FieldStruct::Avro: Typo doesn't make a valid Avro schema") # => true
+```
+
+Schemas, field lists and checked writer schemas are cached per class, and the cache keeps each class alive. Under code reloading, clear it on each reload:
+
+```ruby
+# config/initializers/field_struct.rb
+Rails.application.reloader.to_prepare { FieldStruct::Avro.clear_cache }
 ```
 
 ## Mapping
@@ -130,7 +137,7 @@ Decided 2026-10-27:
 1. Timestamps default to **micros**, and encoding raises rather than drop nanoseconds. Micros is what most Avro readers (Spark, BigQuery, Kafka Connect) handle; pass `timestamp: :nanos` to keep everything.
 2. `:big_decimal` without `round:` becomes a **string**: an Avro decimal needs a fixed scale, and without `round:` there isn't one to declare.
 3. Array elements are **always nullable**, because field_struct accepts nil elements.
-4. Enums are emitted as Avro enums. Give `avro: {enum_default:}` if you'll add symbols later: an Avro reader without a default fails on a symbol it doesn't know.
+4. Enums are emitted as Avro enums. Give `avro: {enum_default:}` if you'll add symbols later: without a default, `decode` raises on a symbol the reader doesn't know, naming the field. A field mapped to an Avro `string` (`avro: {enum: false}`) is checked the same way and honours `enum_default:` too; one with its own `avro: {type:}` isn't checked. The avro gem itself would hand the symbol back, so the instance would fail `valid?`.
 5. The API is **module functions** plus the opt-in `Methods`; nothing is added to your classes unless you include it.
 6. It's built on `FieldStruct::Introspection`, the walk every adapter shares.
 7. Decoding puts a field's `zone:` back, since Avro timestamps carry no offset.

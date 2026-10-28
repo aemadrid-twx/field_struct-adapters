@@ -15,10 +15,22 @@ module FieldStruct
       # @param property [FieldStruct::Introspection::Property]
       # @return [Hash{Symbol=>Object}] the field's +avro:+ option. It is a
       #   field option: struct and union nodes carry no options, and core
-      #   refuses +element: {avro: …}+.
+      #   refuses +element: {avro: …}+. One that isn't a Hash was refused
+      #   by {.check_shape} when the class's fields were first read.
       def field(property)
         options = property.field.options[:avro]
         options.is_a?(::Hash) ? options : NONE
+      end
+
+      # @param property [FieldStruct::Introspection::Property]
+      # @param label [String] the field, as Class#field
+      # @return [void]
+      # @raise [ArgumentError] when its +avro:+ option isn't a Hash
+      def check_shape(property, label)
+        options = property.field.options[:avro]
+        return if options.nil? || options.is_a?(::Hash)
+
+        raise ArgumentError, "FieldStruct::Avro (#{label}) avro: takes a Hash of options, like avro: {type: 'string'}, got #{options.inspect}"
       end
 
       # An array's elements and a union's members take the field's options,
