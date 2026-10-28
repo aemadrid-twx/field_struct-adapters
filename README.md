@@ -7,6 +7,7 @@ Optional gems that connect [field_struct](https://github.com/aemadrid-twx/field_
 | [actionable-otel](actionable-otel) | OpenTelemetry spans for actionable runs, steps and hooks, with outcome and code attributes and no input or output values | 0.1.0, unreleased |
 | [field_struct-avro](field_struct-avro) | Apache Avro record schemas, and instances to and from Avro binary, for Kafka, data lakes and schema registries | 0.1.0, unreleased |
 | [field_struct-json_schema](field_struct-json_schema) | JSON Schema (draft 2020-12) of a class's JSON, for API docs, LLM tool parameters, MCP and validators in other languages | 0.1.0, unreleased |
+| [field_struct-protobuf](field_struct-protobuf) | Protocol Buffers messages built at runtime: the .proto file for other teams, a registered message class, and binary, with field numbers you declare | 0.1.0, unreleased draft |
 
 The adapters are built on `FieldStruct::Introspection`, the field walk in field_struct's core, which you can use to write your own: see [Exporting to another schema language](https://github.com/aemadrid-twx/field_struct/blob/develop/USAGE.md#exporting-to-another-schema-language).
 
@@ -17,6 +18,7 @@ Until the adapters are released, install them from git (the field_struct adapter
 ```ruby
 gem 'field_struct', git: 'https://github.com/aemadrid-twx/field_struct', branch: 'develop'
 gem 'field_struct-avro', git: 'https://github.com/aemadrid-twx/field_struct-adapters', glob: 'field_struct-avro/*.gemspec'
+gem 'field_struct-protobuf', git: 'https://github.com/aemadrid-twx/field_struct-adapters', glob: 'field_struct-protobuf/*.gemspec'
 gem 'field_struct-json_schema', git: 'https://github.com/aemadrid-twx/field_struct-adapters', glob: 'field_struct-json_schema/*.gemspec'
 
 gem 'actionable-otel', git: 'https://github.com/aemadrid-twx/field_struct-adapters', glob: 'actionable-otel/*.gemspec'

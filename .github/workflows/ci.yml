@@ -40,6 +40,7 @@ jobs:
           - actionable-otel
           - field_struct-avro
           - field_struct-json_schema
+          - field_struct-protobuf
         ruby:
           - '3.3'
           - '3.4'

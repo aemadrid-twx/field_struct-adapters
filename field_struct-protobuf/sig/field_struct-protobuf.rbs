@@ -1,0 +1,267 @@
+module FieldStruct
+  # Protocol Buffers for FieldStruct classes, built at runtime with no protoc
+  # step: a +.proto+ file per class, a message class registered with
+  # google-protobuf, and instances to and from protobuf binary.
+  # 
+  #   class Invoice < FieldStruct::Base
+  #     required :id,    :uuid,        proto: {number: 1}
+  #     required :total, :big_decimal, proto: {number: 2}
+  #   end
+  # 
+  #   FieldStruct::Protobuf.proto(Invoice)   # => "syntax = \"proto3\";\n…"
+  #   bytes = FieldStruct::Protobuf.encode(invoice)
+  #   FieldStruct::Protobuf.decode(Invoice, bytes) == invoice  # => true
+  # 
+  # Every field needs a field number (+proto: {number: n}+): protobuf
+  # identifies fields by number on the wire, so a number inferred from
+  # declaration order would turn a reordered field into silently corrupted
+  # data. +serialization:+ picks the +serialize+ format whose names become
+  # protobuf field names (default +:protobuf+).
+  # 
+  # A class's message is built once, the first time it's needed, and
+  # registered in google-protobuf's generated pool under the package named
+  # after the class's modules (+Billing::Invoice+ is +billing.Invoice+).
+  # 
+  # google-protobuf ships no RBS signatures, so the YARD types (and sig/)
+  # say +Object+ or +Class+ for its messages and name the class in prose.
+  module Protobuf
+    VERSION: String
+
+    # _@param_ `klass`
+    # 
+    # _@param_ `serialization`
+    # 
+    # _@return_ — a +Google::Protobuf::FileDescriptorProto+; the file describing +klass+
+    def self.file_descriptor: (singleton(FieldStruct::Base) klass, ?serialization: Symbol) -> Object
+
+    # _@param_ `klass`
+    # 
+    # _@param_ `serialization`
+    # 
+    # _@return_ — the +.proto+ source of the file describing +klass+
+    def self.proto: (singleton(FieldStruct::Base) klass, ?serialization: Symbol) -> String
+
+    # The message class for +klass+, built and registered the first time.
+    # 
+    # _@param_ `klass`
+    # 
+    # _@param_ `serialization`
+    # 
+    # _@return_ — a +Google::Protobuf::AbstractMessage+ subclass
+    def self.message_class: (singleton(FieldStruct::Base) klass, ?serialization: Symbol) -> Class
+
+    # _@param_ `struct`
+    # 
+    # _@param_ `serialization`
+    # 
+    # _@return_ — a +Google::Protobuf::AbstractMessage+
+    def self.to_message: (FieldStruct::Base struct, ?serialization: Symbol) -> Object
+
+    # _@param_ `klass`
+    # 
+    # _@param_ `message` — a +Google::Protobuf::AbstractMessage+
+    # 
+    # _@param_ `serialization`
+    def self.from_message: (singleton(FieldStruct::Base) klass, Object message, ?serialization: Symbol) -> FieldStruct::Base
+
+    # _@param_ `struct`
+    # 
+    # _@param_ `serialization`
+    # 
+    # _@return_ — the protobuf binary encoding
+    def self.encode: (FieldStruct::Base struct, ?serialization: Symbol) -> String
+
+    # _@param_ `klass`
+    # 
+    # _@param_ `bytes` — protobuf binary
+    # 
+    # _@param_ `serialization`
+    def self.decode: (singleton(FieldStruct::Base) klass, String bytes, ?serialization: Symbol) -> FieldStruct::Base
+
+    # _@param_ `klass`
+    # 
+    # _@return_ — +billing+ for +Billing::Invoice+; empty for a top-level class
+    def self.package: (singleton(FieldStruct::Base) klass) -> String
+
+    # _@param_ `klass`
+    def self.message_name: (singleton(FieldStruct::Base) klass) -> String
+
+    # _@param_ `klass`
+    # 
+    # _@return_ — +.billing.Invoice+
+    def self.full_name: (singleton(FieldStruct::Base) klass) -> String
+
+    # _@param_ `klass`
+    # 
+    # _@return_ — +field_struct/billing/invoice.proto+
+    def self.file_name: (singleton(FieldStruct::Base) klass) -> String
+
+    # _@param_ `klass`
+    # 
+    # _@param_ `serialization`
+    # 
+    # _@param_ `pending` — the classes being registered, outermost first
+    # 
+    # _@return_ — a +Google::Protobuf::AbstractMessage+ subclass
+    def self.register: (singleton(FieldStruct::Base) klass, Symbol serialization, ?::Array[Class] pending) -> Class
+
+    # _@param_ `node`
+    def self.struct_class: (Object node) -> singleton(FieldStruct::Base)?
+
+    # _@param_ `name`
+    def self.underscore: (String name) -> String
+
+    # _@param_ `klass`
+    def self.check: (Object klass) -> void
+
+    # Converts instances to and from protobuf messages, walking the same nodes
+    # as {DescriptorBuilder}.
+    # 
+    # @api private
+    class Codec
+      # _@param_ `serialization`
+      def initialize: (serialization: Symbol) -> void
+
+      # _@param_ `struct`
+      # 
+      # _@return_ — a +Google::Protobuf::AbstractMessage+
+      def dump: (FieldStruct::Base struct) -> Object
+
+      # _@param_ `klass`
+      # 
+      # _@param_ `message` — a +Google::Protobuf::AbstractMessage+
+      def load: (singleton(FieldStruct::Base) klass, Object message) -> FieldStruct::Base
+
+      # _@param_ `value` — not nil
+      # 
+      # _@param_ `property`
+      def dump_value: (Object value, FieldStruct::Introspection::Property property) -> Object
+
+      # _@param_ `value`
+      # 
+      # _@param_ `node`
+      # 
+      # _@param_ `property`
+      def dump_one: (Object value, (FieldStruct::Introspection::ScalarNode | FieldStruct::Introspection::StructNode) node, FieldStruct::Introspection::Property property) -> Object
+
+      # _@param_ `time`
+      # 
+      # _@return_ — a +Google::Protobuf::Timestamp+
+      def timestamp: (::Time time) -> Object
+
+      # _@param_ `value`
+      # 
+      # _@param_ `property`
+      # 
+      # _@return_ — a +Google::Protobuf::Value+
+      def json_value: (Object value, FieldStruct::Introspection::Property property) -> Object
+
+      # _@param_ `message` — a +Google::Protobuf::AbstractMessage+
+      # 
+      # _@param_ `property`
+      def load_value: (Object message, FieldStruct::Introspection::Property property) -> Object
+
+      # _@param_ `value`
+      # 
+      # _@param_ `node`
+      def load_one: (Object value, (FieldStruct::Introspection::ScalarNode | FieldStruct::Introspection::StructNode) node) -> Object
+
+      # A Timestamp has no zone; a field with +zone:+ gets the time in its zone
+      # again, as it would from a string (the same rule as field_struct-avro).
+      # 
+      # _@param_ `time`
+      # 
+      # _@param_ `zone`
+      def rezone: (::Time time, String? zone) -> ::Time
+    end
+
+    # Writes a +FileDescriptorProto+ from {DescriptorBuilder} as +.proto+
+    # source, for teams that generate their own code with protoc.
+    # 
+    # @api private
+    class Printer
+      SCALARS: ::Hash[Symbol, String]
+
+      # _@param_ `file` — a +Google::Protobuf::FileDescriptorProto+
+      # 
+      # _@param_ `klass`
+      def initialize: (Object file, singleton(FieldStruct::Base) klass) -> void
+
+      def to_s: () -> String
+
+      # _@param_ `message` — a +Google::Protobuf::DescriptorProto+
+      def message_lines: (Object message) -> ::Array[String]
+
+      # _@param_ `field` — a +Google::Protobuf::FieldDescriptorProto+
+      def field_line: (Object field) -> String
+    end
+
+    # Builds the +FileDescriptorProto+ for one FieldStruct class: one file per
+    # class, holding one message, importing the files of the structs it
+    # refers to.
+    # 
+    # @api private
+    class DescriptorBuilder
+      WELL_KNOWN: ::Hash[String, String]
+      RESERVED_NUMBERS: ::Range[Integer]
+      MAX_NUMBER: Integer
+      IDENTIFIER: Regexp
+
+      # _@param_ `klass`
+      # 
+      # _@param_ `serialization`
+      def initialize: (singleton(FieldStruct::Base) klass, serialization: Symbol) -> void
+
+      # _@return_ — a +Google::Protobuf::FileDescriptorProto+
+      def file: () -> Object
+
+      # _@param_ `properties`
+      def check_numbers: (::Array[FieldStruct::Introspection::Property] properties) -> void
+
+      # _@param_ `property`
+      def number: (FieldStruct::Introspection::Property property) -> Integer?
+
+      # _@param_ `message` — a +Google::Protobuf::DescriptorProto+
+      # 
+      # _@param_ `property`
+      def add_field: (Object message, FieldStruct::Introspection::Property property) -> void
+
+      # proto3 +optional+: a synthetic one-field oneof named +_<field>+.
+      # 
+      # _@param_ `message` — a +Google::Protobuf::DescriptorProto+
+      # 
+      # _@param_ `field` — a +Google::Protobuf::FieldDescriptorProto+
+      def explicit_presence: (Object message, Object field) -> void
+
+      # _@param_ `node`
+      # 
+      # _@param_ `property`
+      def element: (FieldStruct::Introspection::ArrayNode node, FieldStruct::Introspection::Property property) -> (FieldStruct::Introspection::ScalarNode | FieldStruct::Introspection::StructNode)
+
+      # _@param_ `node`
+      # 
+      # _@param_ `property`
+      # 
+      # _@return_ — the field type, and the message type name when it's a message
+      def field_type: ((FieldStruct::Introspection::ScalarNode | FieldStruct::Introspection::StructNode | FieldStruct::Introspection::UnionNode) node, FieldStruct::Introspection::Property property) -> [Symbol, String]
+
+      # _@param_ `klass`
+      # 
+      # _@param_ `property`
+      def message_type: (singleton(FieldStruct::Base) klass, FieldStruct::Introspection::Property property) -> [Symbol, String]
+
+      # _@param_ `type`
+      # 
+      # _@param_ `property`
+      def scalar_type: (FieldStruct::Types::Base _type, FieldStruct::Introspection::Property property) -> [Symbol, String]
+
+      # _@param_ `name`
+      def well_known: (String name) -> [Symbol, String]
+
+      # _@param_ `property`
+      # 
+      # _@param_ `what`
+      def unsupported: (FieldStruct::Introspection::Property property, String what) -> void
+    end
+  end
+end
