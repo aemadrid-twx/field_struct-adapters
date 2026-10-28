@@ -220,7 +220,7 @@ module FieldStruct
 
       # _@return_ — the ECMA-262 pattern, or +nil+ when there is no
       # exact translation
-      def to_s: () -> String?
+      def translate: () -> String?
 
       # Raised internally when the source has no exact translation.
       class Unsupported < StandardError
