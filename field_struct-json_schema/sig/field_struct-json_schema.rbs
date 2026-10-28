@@ -29,7 +29,8 @@ module FieldStruct
   #   field with a default may be left out of the input. Optional fields
   #   accept +null+, and so does every array element (validation skips
   #   +nil+ elements). An optional String-family field with +enum:+ or a
-  #   +format:+ also accepts a blank string, which counts as missing there.
+  #   +format:+ also accepts a blank string, which counts as missing there
+  #   (for +:binary+, only an empty one).
   # * **Constraints** map where JSON Schema has a keyword: +enum:+ → +enum+,
   #   an +in:+ Range → +minimum+ / +maximum+ / +exclusiveMaximum+ (an
   #   infinite end is left open), an +in:+ Array → +enum+, a Regexp
@@ -59,6 +60,7 @@ module FieldStruct
     DRAFT: String
     DECIMAL_PATTERN: String
     BLANK_STRING: ::Hash[String, String]
+    EMPTY_STRING: ::Hash[String, Object]
     CACHE: Cache
     VERSION: String
 
