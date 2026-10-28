@@ -37,7 +37,7 @@ bytes = FieldStruct::Avro.encode(invoice)
 FieldStruct::Avro.decode(Billing::Invoice, bytes) == invoice  # => true
 ```
 
-`to_datum` / `from_datum` give the Hash the avro gem reads and writes, for your own writer or a schema registry. `decode(klass, bytes, writer_schema:)` reads bytes written with an older schema. `include FieldStruct::Avro::Methods` adds `Klass.to_avro_schema`, `#to_avro` and `Klass.from_avro`.
+`to_datum` / `from_datum` give the Hash the avro gem reads and writes, for your own writer or a schema registry. `decode(klass, bytes, writer_schema:)` reads bytes written with an older schema. It raises if a field's decimal precision or scale, or its timestamp precision, differs between the two schemas: the avro gem matches fields by base type only and would read those bytes as the wrong value. `include FieldStruct::Avro::Methods` adds `Klass.to_avro_schema`, `#to_avro` and `Klass.from_avro`.
 
 ## Mapping
 

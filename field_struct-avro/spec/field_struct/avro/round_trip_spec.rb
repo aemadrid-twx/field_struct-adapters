@@ -128,6 +128,39 @@ RSpec.describe FieldStruct::Avro, 'encode and decode' do
     expect(described_class.decode(v2, bytes, writer_schema: old_schema)).to eq(v2.new(id: 7))
   end
 
+  it 'refuses bytes whose writer schema has another decimal scale or timestamp precision, instead of misreading them' do
+    v1 = struct('Evo::Money') { required :amt, :big_decimal, round: 2 }
+    v2 = struct('Evo::Money2') { required :amt, :big_decimal, round: 3 }
+    bytes = described_class.encode(v1.new(amt: '12.30'))
+    writer = described_class.schema(v1).merge('name' => 'Money2')
+
+    expect { described_class.decode(v2, bytes, writer_schema: writer) }
+      .to raise_error(ArgumentError, /amt: written as .*scale 2.*read as .*scale 3/)
+
+    tick = struct('Evo::Tick') do
+      required :at, :time
+      optional :log, :array, of: :time
+    end
+    stamp = tick.new(at: '2026-01-01T00:00:00Z', log: ['2026-01-02T00:00:00Z'])
+    micros = described_class.encode(stamp, timestamp: :micros)
+    writer = described_class.schema(tick, timestamp: :micros)
+
+    expect { described_class.decode(tick, micros, writer_schema: writer, timestamp: :nanos) }
+      .to raise_error(ArgumentError, /at: written as timestamp-micros, read as timestamp-nanos/)
+    expect(described_class.decode(tick, micros, writer_schema: writer, timestamp: :micros)).to eq(stamp)
+  end
+
+  it 'checks logical types inside arrays, unions and nested records too' do
+    line = struct('Evo::Line') { required :price, :big_decimal, round: 2 }
+    v1 = struct('Evo::Order') { optional :lines, :array, of: line }
+    writer = described_class.schema(v1)
+    writer['fields'][0]['type'][1]['items'][1]['fields'][0]['type']['scale'] = 4
+    bytes = described_class.encode(v1.new(lines: [{price: '1.25'}]))
+
+    expect { described_class.decode(v1, bytes, writer_schema: writer) }
+      .to raise_error(ArgumentError, /lines\[\]\.price: written as .*scale 4/)
+  end
+
   it 'round-trips many generated values' do
     klass = struct('Sample') do
       required :i, :integer

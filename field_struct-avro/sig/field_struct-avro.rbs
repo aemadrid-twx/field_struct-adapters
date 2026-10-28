@@ -194,6 +194,78 @@ module FieldStruct
       def rezone: (::Time time, String? zone) -> ::Time
     end
 
+    # Checks a writer and reader schema pair before {Avro.decode} resolves
+    # them. The avro gem matches a field by its base type only, so a decimal
+    # written with scale 2 and read with scale 3, or a timestamp written in
+    # micros and read in nanos, decodes without an error into the wrong
+    # value. This walks both schemas the way resolution pairs them and raises
+    # instead.
+    # 
+    # @api private
+    class Resolution
+      # _@param_ `writer` — an +::Avro::Schema+
+      # 
+      # _@param_ `reader` — an +::Avro::Schema+
+      def self.check: (Object writer, Object reader) -> void
+
+      # _@param_ `writer` — an +::Avro::Schema+
+      # 
+      # _@param_ `reader` — an +::Avro::Schema+
+      # 
+      # _@param_ `path`
+      # 
+      # _@param_ `seen` — writer and reader names of the records already walked (recursive structs)
+      def compare: (
+                     Object writer,
+                     Object reader,
+                     String path,
+                     ::Array[::Array[String]] seen
+                   ) -> ::Array[String]
+
+      # _@param_ `writer` — an +::Avro::Schema+
+      # 
+      # _@param_ `reader` — an +::Avro::Schema+
+      # 
+      # _@param_ `path`
+      # 
+      # _@param_ `seen`
+      def union: (
+                   Object writer,
+                   Object reader,
+                   String path,
+                   ::Array[::Array[String]] seen
+                 ) -> ::Array[String]
+
+      # _@param_ `writer` — an +::Avro::Schema+
+      # 
+      # _@param_ `reader` — an +::Avro::Schema+
+      def same_branch?: (Object writer, Object reader) -> bool
+
+      # _@param_ `writer` — an +::Avro::Schema+
+      # 
+      # _@param_ `reader` — an +::Avro::Schema+
+      # 
+      # _@param_ `path`
+      # 
+      # _@param_ `seen`
+      def record: (
+                    Object writer,
+                    Object reader,
+                    String path,
+                    ::Array[::Array[String]] seen
+                  ) -> ::Array[String]
+
+      # _@param_ `writer` — an +::Avro::Schema+
+      # 
+      # _@param_ `reader` — an +::Avro::Schema+
+      # 
+      # _@param_ `path`
+      def logical: (Object writer, Object reader, String path) -> ::Array[String]
+
+      # _@param_ `schema` — an +::Avro::Schema+
+      def describe: (Object schema) -> String
+    end
+
     # Builds one root class's record schema. A named nested struct becomes a
     # record named after its class (+Billing::Invoice+ is +Invoice+ in
     # namespace +Billing+), defined at first use and referenced by full name

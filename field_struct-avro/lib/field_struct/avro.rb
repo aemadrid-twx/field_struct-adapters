@@ -12,6 +12,7 @@ end
 require_relative 'avro/version'
 require_relative 'avro/schema_builder'
 require_relative 'avro/datum'
+require_relative 'avro/resolution'
 
 module FieldStruct
   # Apache Avro for FieldStruct classes: a record schema per class, and
@@ -82,16 +83,18 @@ module FieldStruct
     # @param bytes [String] binary from {.encode}
     # @param writer_schema [Hash{String=>Object}, String, nil] the schema the bytes were
     #   written with, when it differs from +klass+'s (Avro resolves the two)
+    # @raise [ArgumentError] when a field's decimal scale or precision, or its
+    #   timestamp precision, differs between the two schemas
     # @param serialization [Symbol]
     # @param timestamp [Symbol]
     # @return [FieldStruct::Base]
     def self.decode(klass, bytes, writer_schema: nil, serialization: :avro, timestamp: :micros)
       reader = parsed_schema(klass, serialization, timestamp)
-      writer = if writer_schema
-                 ::Avro::Schema.parse(writer_schema.is_a?(::String) ? writer_schema : JSON.generate(writer_schema))
-               else
-                 reader
-               end
+      writer = reader
+      if writer_schema
+        writer = ::Avro::Schema.parse(writer_schema.is_a?(::String) ? writer_schema : JSON.generate(writer_schema))
+        Resolution.check(writer, reader)
+      end
       datum = ::Avro::IO::DatumReader.new(writer, reader).read(::Avro::IO::BinaryDecoder.new(StringIO.new(bytes)))
       from_datum(klass, datum, serialization:)
     end
