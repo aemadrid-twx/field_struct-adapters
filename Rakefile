@@ -18,5 +18,10 @@ GEMS.each do |gem_dir|
   end
 end
 
-desc 'Specs and lint for every adapter'
-task default: GEMS
+desc 'Lint the files outside the gems (this Rakefile, support/)'
+task :lint do
+  sh 'bundle exec rubocop Rakefile Gemfile support'
+end
+
+desc 'Specs and lint for every adapter, and the shared files'
+task default: [:lint, *GEMS]
