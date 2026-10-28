@@ -283,6 +283,9 @@ module FieldStruct
       # _@param_ `name`
       def check_struct_members: (FieldStruct::Introspection::UnionNode node, String name) -> void
 
+      # A required field with an +avro: {type:}+ override may have been made
+      # nullable, so it doesn't count as required here.
+      # 
       # _@param_ `klass`
       # 
       # _@param_ `required_only`

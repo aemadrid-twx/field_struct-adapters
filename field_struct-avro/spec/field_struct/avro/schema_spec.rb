@@ -153,6 +153,12 @@ RSpec.describe FieldStruct::Avro, '.schema' do
     same = struct('Pay::Same') { required :v, :union, of: [card, bank] }
     expect { described_class.schema(same) }.to raise_error(ArgumentError, /Pay::Bank would be written as Pay::Card.*distinct required fields\z/)
 
+    # A field overridden to a nullable type can be missing, like an optional one.
+    nullable = struct('Pay::Nullable') { required :a, :string, avro: {type: %w[null string]} }
+    other = struct('Pay::Other') { required :z, :integer }
+    expect { described_class.schema(struct('Pay::Override') { required :v, :union, of: [nullable, other] }) }
+      .to raise_error(ArgumentError, /Pay::Nullable has no required fields, so any record fits it/)
+
     # The other order is fine: a Small datum lacks b, so it doesn't fit Big.
     expect(field_type(struct('Pay::Ok') { required :v, :union, of: [big, small] }, :v).map { |t| t.is_a?(Hash) ? t['name'] : t })
       .to eq(%w[Big Small])

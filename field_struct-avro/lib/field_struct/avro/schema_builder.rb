@@ -178,18 +178,23 @@ module FieldStruct
 
           # Swapping helps only when the earlier one wouldn't then fit the later.
           swap = (struct_keys(later, required_only: true) - struct_keys(earlier)).empty? ? '' : ", or put #{later} first"
+          why = required.empty? ? "#{earlier} has no required fields, so any record fits it" : "every required field of #{earlier} is in #{later}"
           raise ArgumentError, "FieldStruct::Avro can't describe #{name}: a #{later} would be written as " \
-                               "#{earlier}, which Avro picks by shape (every required field of #{earlier} is " \
-                               "in #{later}). Give the structs distinct required fields#{swap}"
+                               "#{earlier}, which Avro picks by shape (#{why}). Give the structs distinct required fields#{swap}"
         end
       end
 
+      # A required field with an +avro: {type:}+ override may have been made
+      # nullable, so it doesn't count as required here.
+      #
       # @param klass [Class<FieldStruct::Base>]
       # @param required_only [Boolean]
       # @return [Array<String>] the Avro field names
       def struct_keys(klass, required_only: false)
         properties = Introspection.properties(klass, serialization: @serialization)
-        properties = properties.select { |property| property.field.required? } if required_only
+        if required_only
+          properties = properties.select { |property| property.field.required? && !avro_options(property.node).key?(:type) }
+        end
         properties.map(&:key)
       end
 
