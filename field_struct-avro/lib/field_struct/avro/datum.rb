@@ -280,7 +280,7 @@ module FieldStruct
       # @return [::Time]
       def rezone(time, zone)
         return time unless zone.is_a?(::String)
-        return time.utc if zone == 'UTC'
+        return time.getutc if zone == 'UTC' # a copy: Time#utc would change the caller's
         return time.getlocal(zone) unless zone.include?('/')
 
         require 'tzinfo'
