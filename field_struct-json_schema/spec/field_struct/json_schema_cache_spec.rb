@@ -108,4 +108,14 @@ RSpec.describe FieldStruct::JSONSchema::Cache do
     results = Array.new(8) { Thread.new { Array.new(100) { generate(box) == expected }.all? } }.map(&:value)
     expect(results).to all(be(true))
   end
+
+  it 'rebuilds after clear_cache, giving the same schema' do
+    klass = struct('JCleared') { required :id, :integer }
+    schema = generate(klass)
+    expect(FieldStruct::JSONSchema::Builder).to receive(:new).once.and_call_original
+
+    expect(FieldStruct::JSONSchema.clear_cache).to be_nil
+    expect(generate(klass)).to eq(schema)
+    expect(generate(klass)).to eq(schema)
+  end
 end

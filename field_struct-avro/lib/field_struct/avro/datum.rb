@@ -382,7 +382,7 @@ module FieldStruct
       def json(value)
         Oj.load(value, JSON_LOAD)
       rescue Oj::ParseError, EncodingError => e
-        raise Unparsed, e
+        raise Unparsed, e, cause: nil # Oj's message quotes the text
       end
 
       # Avro times come back in UTC; a field with +zone:+ gets them in its

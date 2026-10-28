@@ -564,12 +564,19 @@ RSpec.describe FieldStruct::Avro, 'encode and decode' do
     end
     bytes = described_class.encode(klass.new(id: 1, pan: '4111111111111111', either: 'x'))
 
-    {bytes[0, 5] => 'EOFError', '' => 'EOFError', "\x02\x00\x12".b => 'NoMethodError'}.each do |input, cause|
+    {bytes[0, 5] => 'EOFError', '' => 'EOFError', "\x02\x00\x12".b => 'NoMethodError',
+     "\x02\x03".b => 'ArgumentError'}.each do |input, cause|
       expect { described_class.decode(klass, input) }.to raise_error(ArgumentError) { |error|
-        expect(error.message).to start_with("FieldStruct::Avro can't decode these bytes as Card (#{cause})")
+        expect(error.message).to start_with("FieldStruct::Avro can't decode these bytes as Card (#{cause}): they end early, " \
+                                            'or were written with another schema')
         expect(error.cause.class.name).to eq(cause)
       }
     end
+    renamed = described_class.schema(klass).merge('name' => 'Other')
+    expect { described_class.decode(klass, bytes, writer_schema: renamed) }
+      .to raise_error(ArgumentError, /as Card \(Avro::IO::SchemaMatchException\): they end early, or the writer schema given/)
+    expect { described_class.decode(klass, 123) }
+      .to raise_error(ArgumentError, 'FieldStruct::Avro.decode expects the bytes as a String, got Integer')
     expect { described_class.decode(klass, bytes, writer_schema: '{"type": "record", nope') }
       .to raise_error(ArgumentError, /\AFieldStruct::Avro.decode: writer_schema: isn't a valid Avro schema \(MultiJSON::ParseError: /)
     expect { described_class.decode(klass, bytes, writer_schema: {'type' => 'recrod'}) }
@@ -587,11 +594,31 @@ RSpec.describe FieldStruct::Avro, 'encode and decode' do
     expect { described_class.from_datum(klass, {'id' => 1, 'meta' => '{"card":"4111111111111111", broken'}) }
       .to raise_error(ArgumentError) { |error|
         expect(error.message).to eq("FieldStruct::Avro (Note#meta) holds :value JSON that doesn't parse (EncodingError)")
-        expect(error.message).not_to include('4111')
-        expect(error.cause).to be_a(EncodingError)
+        expect(error.full_message).not_to include('4111')
+        expect(error.cause).to be_nil # Oj's error quotes the text
       }
     expect { described_class.from_datum(holder, {'inner' => {'meta' => '[1,'}}) }
       .to raise_error(ArgumentError, /\(NoteHolder#inner\.meta\) holds :value JSON/)
+  end
+
+  it "says which fields are wrong when the avro gem can't write an invalid instance, keeping values out" do
+    klass = struct('Signup') do
+      required :id, :integer
+      required :pin, :string, sensitive: true
+    end
+
+    expect { described_class.encode(klass.new(id: 'abc', pin: 1234)) }.to raise_error(ArgumentError) { |error|
+      expect(error.message).to start_with("FieldStruct::Avro can't encode an invalid Signup: Id could not be coerced")
+      expect(error.message).not_to include('abc')
+      expect(error.cause).to be_nil # the avro gem's error quotes the value
+    }
+    lock = struct('Lock') { required :pin, :integer, sensitive: true }
+    expect { described_class.encode(lock.new(pin: 'hunter2')) }.to raise_error(ArgumentError) { |error|
+      expect(error.message).to start_with("FieldStruct::Avro can't encode an invalid Lock: Pin")
+      expect(error.full_message).not_to include('hunter2')
+    }
+    expect { described_class.encode(klass.new(pin: 'x')) }
+      .to raise_error(ArgumentError, "FieldStruct::Avro can't encode an invalid Signup: Id is required")
   end
 
   it 'raises on a symbol the reader enum lacks, naming the field, unless the reader has an enum_default' do

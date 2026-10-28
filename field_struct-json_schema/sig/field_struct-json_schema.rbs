@@ -65,6 +65,11 @@ module FieldStruct
     CACHE: Cache
     VERSION: String
 
+    # Forgets every schema built so far. The cache holds each struct class
+    # it has seen, so under code reloading (Rails in development) call this
+    # on each reload; the next {.generate} rebuilds what it needs.
+    def self.clear_cache: () -> void
+
     # Generate the JSON Schema for a FieldStruct subclass.
     # 
     # _@param_ `klass`
@@ -103,6 +108,9 @@ module FieldStruct
     # @api private
     class Cache
       def initialize: () -> void
+
+      # Drops every entry, and with them the classes they hold.
+      def clear: () -> void
 
       # _@param_ `klass`
       # 
