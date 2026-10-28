@@ -345,7 +345,14 @@ module FieldStruct
       # _@param_ `options`
       # 
       # _@param_ `avro`
-      def decimal_type: (FieldStruct::Types::BigDecimal _type, ::Hash[Symbol, Object] options, ::Hash[Symbol, Object] avro) -> (String | ::Hash[String, Object])
+      # 
+      # _@param_ `name`
+      def decimal_type: (
+                          FieldStruct::Types::BigDecimal _type,
+                          ::Hash[Symbol, Object] options,
+                          ::Hash[Symbol, Object] avro,
+                          String name
+                        ) -> (String | ::Hash[String, Object])
 
       # _@param_ `options`
       # 
