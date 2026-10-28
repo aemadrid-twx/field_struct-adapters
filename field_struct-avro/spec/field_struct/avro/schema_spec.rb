@@ -127,6 +127,37 @@ RSpec.describe FieldStruct::Avro, '.schema' do
     expect { described_class.schema(bytes) }.to raise_error(ArgumentError, /both become Avro string/)
   end
 
+  it 'refuses a union of structs where an earlier one would swallow a later one' do
+    small = struct('Pay::Small') { required :a, :string }
+    big = struct('Pay::Big') do
+      required :a, :string
+      required :b, :string
+    end
+    loose = struct('Pay::Loose') do
+      required :a, :string
+      optional :c, :string
+    end
+    card = struct('Pay::Card') { required :number, :string }
+    bank = struct('Pay::Bank') { required :number, :integer }
+
+    # Avro writes the first branch a datum fits, and a record ignores extra
+    # keys, so a Big would be written as a Small and lose b.
+    swallow = struct('Pay::Swallow') { required :v, :union, of: [small, big] }
+    expect { described_class.schema(swallow) }
+      .to raise_error(ArgumentError, /Pay::Big would be written as Pay::Small.*or put Pay::Big first/)
+    # An optional field can be missing, so a Small fits Loose.
+    optional = struct('Pay::Optional') { required :v, :union, of: [loose, small] }
+    expect { described_class.schema(optional) }
+      .to raise_error(ArgumentError, /Pay::Small would be written as Pay::Loose/)
+    # The same keys can't be told apart on the way back either.
+    same = struct('Pay::Same') { required :v, :union, of: [card, bank] }
+    expect { described_class.schema(same) }.to raise_error(ArgumentError, /Pay::Bank would be written as Pay::Card.*distinct required fields\z/)
+
+    # The other order is fine: a Small datum lacks b, so it doesn't fit Big.
+    expect(field_type(struct('Pay::Ok') { required :v, :union, of: [big, small] }, :v).map { |t| t.is_a?(Hash) ? t['name'] : t })
+      .to eq(%w[Big Small])
+  end
+
   it 'carries description as doc and sensitive as x-fs-sensitive' do
     klass = struct('Card') { required :pan, :string, desc: 'Card number', sensitive: true }
 

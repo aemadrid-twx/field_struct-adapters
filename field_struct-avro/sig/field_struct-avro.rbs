@@ -271,6 +271,25 @@ module FieldStruct
       # _@param_ `namespace`
       def union_type: (FieldStruct::Introspection::UnionNode node, String name, String? namespace) -> ::Array[Object]
 
+      # Avro writes a union datum as the first branch it fits, and a record
+      # fits any Hash holding its required keys (extra keys are ignored), so
+      # an earlier struct member whose required keys a later one also has
+      # would swallow it: the later struct is written as the earlier one and
+      # loses its other fields. Two members with the same keys also can't be
+      # told apart when read back.
+      # 
+      # _@param_ `node`
+      # 
+      # _@param_ `name`
+      def check_struct_members: (FieldStruct::Introspection::UnionNode node, String name) -> void
+
+      # _@param_ `klass`
+      # 
+      # _@param_ `required_only`
+      # 
+      # _@return_ — the Avro field names
+      def struct_keys: (singleton(FieldStruct::Base) klass, ?required_only: bool) -> ::Array[String]
+
       # _@param_ `type`
       # 
       # _@return_ — what Avro allows once per union
