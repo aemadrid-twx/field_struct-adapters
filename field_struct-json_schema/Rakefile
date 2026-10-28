@@ -3,6 +3,7 @@
 require 'bundler/gem_tasks'
 require 'rspec/core/rake_task'
 require 'rubocop/rake_task'
+require_relative '../support/sigs'
 
 # Several gems share this repo, so each one's release tags carry its name.
 Bundler::GemHelper.tag_prefix = 'field_struct-json_schema/'
@@ -10,7 +11,9 @@ Bundler::GemHelper.tag_prefix = 'field_struct-json_schema/'
 RSpec::Core::RakeTask.new(:spec)
 RuboCop::RakeTask.new
 
-task default: %i[spec rubocop]
+AdapterSigs.define('field_struct-json_schema', libraries: %w[json date bigdecimal time], gems: %w[field_struct])
+
+task default: %i[spec rubocop sigs:check sigs:validate]
 
 desc 'Compare pattern_for against Node: every translated pattern must match exactly what Ruby matches (needs node)'
 task :differential do

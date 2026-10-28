@@ -23,7 +23,7 @@ Gem::Specification.new do |spec|
   spec.metadata['changelog_uri'] = 'https://github.com/aemadrid-twx/field_struct-adapters/blob/main/field_struct-json_schema/CHANGELOG.md'
   spec.metadata['rubygems_mfa_required'] = 'true'
 
-  spec.files = Dir['lib/**/*.rb'] + %w[README.md CHANGELOG.md]
+  spec.files = Dir['lib/**/*.rb', 'sig/**/*.rbs'] + %w[README.md CHANGELOG.md]
   spec.require_paths = ['lib']
 
   # Introspection, the walk this gem is built on, is on develop (still 0.16.0)

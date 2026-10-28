@@ -24,6 +24,12 @@ gem 'field_struct-json_schema', git: 'https://github.com/aemadrid-twx/field_stru
 gem 'actionable-otel', git: 'https://github.com/aemadrid-twx/field_struct-adapters', glob: 'actionable-otel/*.gemspec'
 ```
 
+## Type signatures
+
+Each gem ships RBS signatures in `sig/`, generated from its YARD comments by [sord](https://github.com/AaronC81/sord), as field_struct and actionable do. Each gem's default rake task fails when the committed file is stale (`rake sigs:check`) or names a type rbs can't resolve against the signatures field_struct and actionable ship (`rake sigs:validate`). After changing a YARD comment, run `bundle exec rake sigs:generate` in that gem's directory and commit the result.
+
+Write a YARD type from field_struct or actionable in full (`FieldStruct::Field`, not `Field`): sord parses only the adapter, so a short name is a guess. `support/sigs.rb` explains how each check catches one.
+
 ## Versions and releases
 
 Each gem has its own version, CHANGELOG and tags (`field_struct-avro/v0.1.0`), and is released on its own schedule: a fix to one adapter never forces a release of another. Each gemspec declares the field_struct (or actionable) versions it works with.

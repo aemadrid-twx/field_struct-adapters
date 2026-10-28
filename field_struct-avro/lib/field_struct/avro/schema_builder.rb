@@ -68,7 +68,7 @@ module FieldStruct
       end
 
       # @param class_name [String] +"Billing::Invoice"+
-      # @return [Array(String, String)] +["Invoice", "Billing"]+ (+nil+
+      # @return [Array(String, String), Array(String, nil)] +["Invoice", "Billing"]+ (+nil+
       #   namespace for a top-level class)
       def split_name(class_name)
         *path, name = class_name.split('::')
@@ -76,7 +76,7 @@ module FieldStruct
         [name, path.empty? ? nil : path.join('.')]
       end
 
-      # @param property [Introspection::Property]
+      # @param property [FieldStruct::Introspection::Property]
       # @param record_name [String]
       # @param namespace [String, nil]
       # @return [Hash{String=>Object}]
@@ -102,16 +102,16 @@ module FieldStruct
         out
       end
 
-      # @param node [Introspection::ScalarNode, Introspection::ArrayNode,
-      #   Introspection::UnionNode, Introspection::StructNode]
+      # @param node [FieldStruct::Introspection::ScalarNode, FieldStruct::Introspection::ArrayNode,
+      #   FieldStruct::Introspection::UnionNode, FieldStruct::Introspection::StructNode]
       # @return [Hash{Symbol=>Object}] the node's +avro:+ option
       def avro_options(node)
         options = node.respond_to?(:options) ? node.options[:avro] : nil
         options.is_a?(::Hash) ? options : {}
       end
 
-      # @param node [Introspection::ScalarNode, Introspection::ArrayNode,
-      #   Introspection::UnionNode, Introspection::StructNode]
+      # @param node [FieldStruct::Introspection::ScalarNode, FieldStruct::Introspection::ArrayNode,
+      #   FieldStruct::Introspection::UnionNode, FieldStruct::Introspection::StructNode]
       # @param avro [Hash{Symbol=>Object}] the node's +avro:+ option
       # @param name [String] the name for an anonymous record or an enum
       # @param namespace [String, nil]
@@ -127,7 +127,7 @@ module FieldStruct
         end
       end
 
-      # @param node [Introspection::ArrayNode]
+      # @param node [FieldStruct::Introspection::ArrayNode]
       # @param name [String]
       # @param namespace [String, nil]
       # @return [Hash{String=>Object}]
@@ -139,7 +139,7 @@ module FieldStruct
         {'type' => 'array', 'items' => nullable(type_for(node.element, avro_options(node.element), name, namespace))}
       end
 
-      # @param node [Introspection::UnionNode]
+      # @param node [FieldStruct::Introspection::UnionNode]
       # @param name [String]
       # @param namespace [String, nil]
       # @return [Array<Object>]
@@ -166,7 +166,7 @@ module FieldStruct
         UNION_SLOT.fetch(type['type'], type['type'])
       end
 
-      # @param type [Types::Base]
+      # @param type [FieldStruct::Types::Base]
       # @param options [Hash{Symbol=>Object}]
       # @param avro [Hash{Symbol=>Object}]
       # @param name [String]
@@ -204,7 +204,7 @@ module FieldStruct
       # A +round:+ decimal is an Avro decimal with that scale. Without one
       # there is no scale to declare, so the digits travel as a string.
       #
-      # @param type [Types::BigDecimal]
+      # @param type [FieldStruct::Types::BigDecimal]
       # @param options [Hash{Symbol=>Object}]
       # @param avro [Hash{Symbol=>Object}]
       # @return [String, Hash{String=>Object}]
@@ -237,7 +237,7 @@ module FieldStruct
       # A literal default of the field's own Avro type; anything else (a
       # callable, a date) is left out.
       #
-      # @param field [Field]
+      # @param field [FieldStruct::Field]
       # @param type [String, Hash{String=>Object}, Array<Object>]
       # @return [Object, nil]
       def default_for(field, type)
@@ -251,7 +251,7 @@ module FieldStruct
         end
       end
 
-      # @param field [Field]
+      # @param field [FieldStruct::Field]
       # @param value [Object]
       # @return [String, nil]
       def string_default(field, value)
