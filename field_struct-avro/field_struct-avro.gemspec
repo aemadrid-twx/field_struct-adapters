@@ -14,10 +14,12 @@ Gem::Specification.new do |spec|
     instances to and from Avro datums and binary, without losing decimals,
     64-bit integers, sub-millisecond times or enum symbols on the way.
   DESC
-  spec.homepage = 'https://github.com/aemadrid-twx/field_struct-avro'
+  spec.homepage = 'https://github.com/aemadrid-twx/field_struct-adapters/tree/main/field_struct-avro'
   spec.license = 'MIT'
   spec.required_ruby_version = '>= 3.3.0'
 
+  spec.metadata['source_code_uri'] = spec.homepage
+  spec.metadata['changelog_uri'] = 'https://github.com/aemadrid-twx/field_struct-adapters/blob/main/field_struct-avro/CHANGELOG.md'
   spec.metadata['rubygems_mfa_required'] = 'true'
 
   spec.files = Dir['lib/**/*.rb'] + %w[README.md CHANGELOG.md]
@@ -26,5 +28,8 @@ Gem::Specification.new do |spec|
   spec.add_dependency 'avro', '~> 1.12'
   # avro needs bigdecimal but doesn't declare it, and Ruby 3.4 unbundled it.
   spec.add_dependency 'bigdecimal', '>= 3.1'
-  spec.add_dependency 'field_struct'
+  # Introspection, the walk this gem is built on, is on develop (still 0.16.0)
+  # and lands in the next release; raise this floor to that release then.
+  # lib/field_struct/avro.rb raises a clear LoadError until it's there.
+  spec.add_dependency 'field_struct', '>= 0.16'
 end

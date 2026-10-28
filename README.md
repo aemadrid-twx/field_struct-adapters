@@ -1,0 +1,36 @@
+# field_struct-adapters
+
+Optional gems that connect [field_struct](https://github.com/aemadrid-twx/field_struct) and [actionable](https://github.com/aemadrid-twx/actionable) to other formats and tools. Each one is its own gem, so you install, load and upgrade only the ones you use.
+
+| Gem | What it does | Status |
+|---|---|---|
+| [field_struct-avro](field_struct-avro) | Apache Avro record schemas, and instances to and from Avro binary, for Kafka, data lakes and schema registries | 0.1.0, unreleased |
+
+The adapters are built on `FieldStruct::Introspection`, the field walk in field_struct's core, which you can use to write your own: see [Exporting to another schema language](https://github.com/aemadrid-twx/field_struct/blob/develop/USAGE.md#exporting-to-another-schema-language).
+
+## Installing
+
+Until field_struct ships Introspection in a release, install from git:
+
+```ruby
+gem 'field_struct', git: 'https://github.com/aemadrid-twx/field_struct', branch: 'develop'
+gem 'field_struct-avro', git: 'https://github.com/aemadrid-twx/field_struct-adapters', glob: 'field_struct-avro/*.gemspec'
+```
+
+## Versions and releases
+
+Each gem has its own version, CHANGELOG and tags (`field_struct-avro/v0.1.0`), and is released on its own schedule: a fix to one adapter never forces a release of another. Each gemspec declares the field_struct (or actionable) versions it works with.
+
+## Development
+
+```sh
+bundle install
+bundle exec rake                   # every gem's specs and RuboCop
+bundle exec rake field_struct-avro # one gem
+```
+
+Each gem directory is self-contained (its own Gemfile, Rakefile and specs), so you can also `cd` into one and run `bundle exec rake` there. CI runs every gem on Ruby 3.3, 3.4 and 4.0, on every PR and nightly against the newest field_struct and actionable code.
+
+## License
+
+MIT; see [LICENSE.txt](LICENSE.txt).

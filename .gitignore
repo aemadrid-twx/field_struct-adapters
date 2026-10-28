@@ -1,5 +1,5 @@
 /.bundle/
-/pkg/
-/tmp/
+pkg/
+tmp/
 Gemfile.lock
 .rspec_status

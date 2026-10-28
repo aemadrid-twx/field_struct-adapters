@@ -2,7 +2,12 @@
 
 Apache Avro for [FieldStruct](https://github.com/aemadrid-twx/field_struct) classes: a record schema per class, and instances to and from Avro binary, without losing decimals, 64-bit integers, sub-millisecond times or enum symbols.
 
-> **Status: local draft (0.1.0), not published.** It needs `FieldStruct::Introspection`, merged to field_struct `develop` (#23) but unreleased. The defaults below are proposals waiting on a decision; see [Open decisions](#open-decisions).
+> **Status: 0.1.0, unreleased.** It needs `FieldStruct::Introspection`, which is on field_struct `develop` but not yet in a release, so install it from git for now:
+>
+> ```ruby
+> gem 'field_struct', git: 'https://github.com/aemadrid-twx/field_struct', branch: 'develop'
+> gem 'field_struct-avro', git: 'https://github.com/aemadrid-twx/field_struct-adapters', glob: 'field_struct-avro/*.gemspec'
+> ```
 
 ```ruby
 require 'field_struct/avro'
@@ -56,17 +61,17 @@ FieldStruct::Avro.decode(Billing::Invoice, bytes) == invoice  # => true
 
 A field's `avro: {type: …}` replaces its mapping entirely.
 
-## Open decisions
+## Defaults, and why
 
-Each default here is a proposal from the overnight run of 2026-10-25, not yet decided:
+Decided 2026-10-27:
 
-1. Timestamps default to **micros**, raising rather than dropping nanoseconds (alternatives: nanos, or RFC 3339 strings, which keep the offset but lose time semantics downstream).
-2. `:big_decimal` without `round:` becomes a **string** (alternatives: raise, or require `avro: {precision:, scale:}`).
-3. Array elements are **always nullable**, matching JSON Schema.
-4. Enums are emitted, with opt-in `enum_default:` (Avro readers break on new symbols without one).
-5. API: **module functions** plus opt-in `Methods`, no monkey-patching.
-6. Built on `FieldStruct::Introspection` (field_struct#23).
-7. Time zones are put back **in this gem** on decode; whether field_struct's `Time#coerce` should re-zone a `Time` it's given is a separate core question.
+1. Timestamps default to **micros**, and encoding raises rather than drop nanoseconds. Micros is what most Avro readers (Spark, BigQuery, Kafka Connect) handle; pass `timestamp: :nanos` to keep everything.
+2. `:big_decimal` without `round:` becomes a **string**: an Avro decimal needs a fixed scale, and without `round:` there isn't one to declare.
+3. Array elements are **always nullable**, because field_struct accepts nil elements.
+4. Enums are emitted as Avro enums. Give `avro: {enum_default:}` if you'll add symbols later: an Avro reader without a default fails on a symbol it doesn't know.
+5. The API is **module functions** plus the opt-in `Methods`; nothing is added to your classes unless you include it.
+6. It's built on `FieldStruct::Introspection`, the walk every adapter shares.
+7. Decoding puts a field's `zone:` back, since Avro timestamps carry no offset.
 
 Not built yet: schema-registry helpers (avro_turf), Avro → FieldStruct class generation.
 

@@ -5,6 +5,10 @@ require 'json'
 require 'stringio'
 require 'avro'
 require 'field_struct'
+unless defined?(FieldStruct::Introspection)
+  raise LoadError, "field_struct-avro needs FieldStruct::Introspection, which field_struct #{FieldStruct::VERSION} doesn't have; " \
+                   'use a field_struct with it (develop, until the next release)'
+end
 require_relative 'avro/version'
 require_relative 'avro/schema_builder'
 require_relative 'avro/datum'

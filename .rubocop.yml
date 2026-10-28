@@ -2,6 +2,7 @@ AllCops:
   DisplayCopNames: true
   DisplayStyleGuide: true
   NewCops: enable
+  SuggestExtensions: false
   TargetRubyVersion: 3.3
   Exclude:
     - 'scrap/**/*'

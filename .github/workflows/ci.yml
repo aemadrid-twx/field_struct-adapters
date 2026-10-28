@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  # Every adapter builds against field_struct and actionable from git (or a
+  # range of releases), and Gemfile.lock is not committed, so a nightly run
+  # resolves the newest core code: a core change that breaks an adapter shows
+  # up the next morning instead of when someone upgrades.
+  schedule:
+    - cron: '17 9 * * *'
+  workflow_dispatch:
+
+jobs:
+  gem:
+    # GitHub-hosted: the self-hosted afs-ci runners are registered per repo,
+    # and this one has none yet.
+    runs-on: ubuntu-latest
+    name: ${{ matrix.gem }} (Ruby ${{ matrix.ruby }})
+    strategy:
+      fail-fast: false
+      matrix:
+        gem:
+          - field_struct-avro
+        ruby:
+          - '3.3'
+          - '3.4'
+          - '4.0'
+    defaults:
+      run:
+        working-directory: ${{ matrix.gem }}
+    env:
+      BUNDLE_GEMFILE: ${{ github.workspace }}/${{ matrix.gem }}/Gemfile
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ruby/setup-ruby@7f797815d8adceb1c412e7abefdd1ab4abc47a5f # v1.335.0
+        with:
+          ruby-version: ${{ matrix.ruby }}
+          bundler-cache: true
+          working-directory: ${{ matrix.gem }}
+      - name: Specs and lint
+        run: bundle exec rake
