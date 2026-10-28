@@ -213,11 +213,7 @@ module FieldStruct
       # @return [::Time]
       # @raise [ArgumentError] when the precision would drop part of +time+
       def exact_time(time, avro)
-        precision = begin
-          Options.timestamp(avro, @timestamp)
-        rescue ArgumentError => e
-          raise Located, e.message.delete_prefix('FieldStruct::Avro ')
-        end
+        precision = Options.timestamp(avro, @timestamp, error: Located)
         return time if (time.nsec % NANOS.fetch(precision)).zero?
 
         raise Imprecise.new(time, precision)
