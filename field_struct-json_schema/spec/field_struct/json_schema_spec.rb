@@ -337,7 +337,29 @@ RSpec.describe FieldStruct::JSONSchema do
         expect(property(klass, :any)).to eq({})
         expect(property(klass, :never)).to eq('not' => {})
         bad = struct('BadOverride') { optional :t, :string, json_schema: [1] }
-        expect { described_class.generate(bad) }.to raise_error(ArgumentError, /json_schema: must be a Hash or a boolean, got \[1\]/)
+        expect { described_class.generate(bad) }
+          .to raise_error(ArgumentError, /generate: the json_schema: option of BadOverride#t must be a Hash or a boolean, got \[1\]/)
+      end
+
+      it 'names the root when an anonymous struct nests itself' do
+        node = Class.new(FieldStruct::Base)
+        node.optional :next, node
+        klass = struct('Chain') { required :head, node }
+
+        expect { described_class.generate(klass) }
+          .to raise_error(ArgumentError, /generate\(Chain\) cannot describe a recursive anonymous struct; assign it to a constant/)
+      end
+
+      it "names the type when a type's json_schema returns neither a Hash nor a boolean" do
+        stub_const('Shouty', Class.new(FieldStruct::Types::Base) do
+          def coerce(value, **) = value
+          def ruby_type = String
+          def json_schema = [1]
+        end)
+        klass = struct('UsesShouty') { required :s, Shouty }
+
+        expect { described_class.generate(klass) }
+          .to raise_error(ArgumentError, /generate: Shouty#json_schema must be a Hash or a boolean, got \[1\]/)
       end
 
       it 'never builds the element of an array whose json_schema: replaces it' do
@@ -385,6 +407,16 @@ RSpec.describe FieldStruct::JSONSchema do
       expect(instance).to be_valid
       expect(errors_for(described_class.generate(klass), instance.to_json)).to eq([])
       expect(errors_for(described_class.generate(klass), '{"color":"blue"}')).not_to be_empty
+    end
+
+    it 'accepts an empty optional binary, but not a blank one, as the struct does' do
+      klass = struct('Blob') { optional :b, :binary, enum: %w[a b] }
+      schema = described_class.generate(klass)
+
+      expect(klass.new(b: '')).to be_valid
+      expect(errors_for(schema, klass.new(b: '').to_json)).to eq([])
+      expect(klass.new(b: ' ')).not_to be_valid
+      expect(errors_for(schema, klass.new(b: ' ').to_json)).not_to be_empty
     end
 
     it 'accepts a nil element in an array of nested structs' do

@@ -59,6 +59,7 @@ module FieldStruct
     DRAFT: String
     DECIMAL_PATTERN: String
     BLANK_STRING: ::Hash[String, String]
+    EMPTY_STRING: ::Hash[String, Object]
     CACHE: Cache
     VERSION: String
 
