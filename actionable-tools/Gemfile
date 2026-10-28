@@ -1,0 +1,26 @@
+# frozen_string_literal: true
+
+source 'https://rubygems.org'
+
+gemspec
+
+# Unreleased: input/output schemas come from field_struct-json_schema, which
+# needs FieldStruct::Introspection (field_struct develop).
+gem 'actionable-rb', git: 'https://github.com/aemadrid-twx/actionable', branch: 'main'
+gem 'field_struct', git: 'https://github.com/aemadrid-twx/field_struct', branch: 'develop'
+gem 'field_struct-json_schema', path: '../field_struct-json_schema'
+
+# The two integrations' targets, for their specs. Apps add the one they use.
+gem 'mcp', '~> 1.8'
+gem 'ruby_llm', '~> 2.1'
+
+# An independent validator for the schemas and results in the specs.
+gem 'json_schemer', '~> 2.5', require: false
+
+gem 'rake', '~> 13.0'
+gem 'rspec', '~> 3.13'
+gem 'rubocop', '~> 1.60', require: false
+
+# Type signatures: sord generates sig/ from the YARD comments; rbs validates them.
+gem 'rbs', '~> 3.0', require: false
+gem 'sord', '~> 7.1.0', require: false # pinned: a new sord can change the output, and sigs:check compares it byte for byte

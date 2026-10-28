@@ -1,0 +1,216 @@
+module Actionable
+  # Actionable actions as tools an LLM can call. {.definition} describes one
+  # action in a form-neutral way (a name, a description, JSON Schemas for its
+  # input and result, and {Definition#call}); +actionable/tools/mcp+ and
+  # +actionable/tools/ruby_llm+ wrap a definition for those libraries.
+  # 
+  # Nothing is exposed unless you name it: there's no "every registered
+  # action" option, because an action that's safe to call from your code isn't
+  # automatically safe to hand to a model.
+  module Tools
+    RESULT_KEYS: ::Array[String]
+    VERSION: String
+
+    # _@param_ `action` — an action with an +input+ schema
+    # 
+    # _@param_ `description` — what the tool does, for the model; required until actions can describe themselves
+    # 
+    # _@param_ `name` — the tool's name; defaults to the action's class name, underscored (+Billing::RefundOrder+ becomes +refund_order+)
+    # 
+    # _@param_ `context` — input fields your server supplies rather than the model (the current user, a tenant), each with a proc that reads it from the context the integration passes to {Definition#call}
+    # 
+    # _@param_ `annotations` — hints for the client: +read_only:+, +destructive:+, +idempotent:+, +open_world:+
+    def definition: (
+                      singleton(Actionable::Action) action,
+                      description: String,
+                      ?name: String?,
+                      ?context: ::Hash[Symbol, Proc],
+                      ?annotations: ::Hash[Symbol, bool]
+                    ) -> Definition
+
+    # _@param_ `action` — an action with an +input+ schema
+    # 
+    # _@param_ `description` — what the tool does, for the model; required until actions can describe themselves
+    # 
+    # _@param_ `name` — the tool's name; defaults to the action's class name, underscored (+Billing::RefundOrder+ becomes +refund_order+)
+    # 
+    # _@param_ `context` — input fields your server supplies rather than the model (the current user, a tenant), each with a proc that reads it from the context the integration passes to {Definition#call}
+    # 
+    # _@param_ `annotations` — hints for the client: +read_only:+, +destructive:+, +idempotent:+, +open_world:+
+    def self.definition: (
+                           singleton(Actionable::Action) action,
+                           description: String,
+                           ?name: String?,
+                           ?context: ::Hash[Symbol, Proc],
+                           ?annotations: ::Hash[Symbol, bool]
+                         ) -> Definition
+
+    # One action, described as a tool. Immutable; build it once, at boot.
+    class Definition
+      # _@param_ `action`
+      # 
+      # _@param_ `description`
+      # 
+      # _@param_ `name`
+      # 
+      # _@param_ `context`
+      # 
+      # _@param_ `annotations`
+      def initialize: (
+                        singleton(Actionable::Action) action,
+                        description: String,
+                        name: String?,
+                        context: ::Hash[Symbol, Proc],
+                        annotations: ::Hash[Symbol, bool]
+                      ) -> void
+
+      # Runs the action with the model's arguments plus the context fields.
+      # 
+      # A context field the model sends anyway is ignored: those values come
+      # only from +source+. Exceptions the action raises propagate.
+      # 
+      # _@param_ `arguments` — the model's arguments
+      # 
+      # _@param_ `source` — what the context procs read from (MCP's +server_context+, or whatever you built the RubyLLM tool with)
+      # 
+      # _@return_ — +status+ (+success+, +failure+ or
+      # +skipped+), +code+, +message+, +output+, +errors+ (field name to
+      # messages) and +metadata+, always all six
+      def call: (::Hash[(String | Symbol), Object] arguments, ?Object? source) -> ::Hash[String, Object]
+
+      # _@param_ `result` — what {#call} returned
+      # 
+      # _@return_ — whether it reports a failure (a skip isn't one)
+      def error?: (::Hash[String, Object] result) -> bool
+
+      # _@param_ `action`
+      def default_name: (Class action) -> String
+
+      def build_input_schema: () -> ::Hash[String, Object]
+
+      # The JSON name of an input field, as the schema's properties use it.
+      # 
+      # _@param_ `field`
+      def external_key: (Symbol field) -> String
+
+      # The result envelope. +output+ follows the action's output schema only
+      # on success: a failed or skipped run's output may leave required fields
+      # empty.
+      def build_output_schema: () -> ::Hash[String, Object]
+
+      def code_description: () -> String
+
+      # _@param_ `result`
+      def result_hash: (Actionable::Result result) -> ::Hash[String, Object]
+
+      # _@param_ `value`
+      # 
+      # _@return_ — +value+ as JSON would carry it
+      def json: (Object value) -> Object
+
+      attr_reader action: singleton(Actionable::Action)
+
+      attr_reader name: String
+
+      attr_reader description: String
+
+      attr_reader annotations: ::Hash[Symbol, bool]
+
+      # _@return_ — the JSON Schema of what the model sends
+      attr_reader input_schema: ::Hash[String, Object]
+
+      # _@return_ — the JSON Schema of what {#call} returns
+      attr_reader output_schema: ::Hash[String, Object]
+    end
+
+    # Actions as tools for the MCP Ruby SDK (the +mcp+ gem).
+    # 
+    #   tool = Actionable::Tools::MCP.tool(RefundOrder,
+    #     description: 'Refund part or all of an order',
+    #     context: {user_id: ->(server_context) { server_context[:user_id] }},
+    #     annotations: {destructive: true})
+    #   MCP::Server.new(name: 'shop', tools: [tool], server_context: {user_id: current_user.id})
+    # 
+    # Success and skipped runs come back as +structuredContent+, a failure
+    # with +isError+ set, all in the shape {Definition#call} documents, and the
+    # same JSON as text for clients that read only +content+.
+    module MCP
+      HINTS: ::Hash[Symbol, Symbol]
+
+      # _@param_ `action`
+      # 
+      # _@param_ `options` — {Tools.definition}'s keywords; context procs receive the server's +server_context+
+      # 
+      # _@return_ — an +::MCP::Tool+ subclass (mcp ships no RBS signatures)
+      def tool: (singleton(Actionable::Action) action, **::Hash[Symbol, Object] options) -> Class
+
+      # _@param_ `action`
+      # 
+      # _@param_ `options` — {Tools.definition}'s keywords; context procs receive the server's +server_context+
+      # 
+      # _@return_ — an +::MCP::Tool+ subclass (mcp ships no RBS signatures)
+      def self.tool: (singleton(Actionable::Action) action, **::Hash[Symbol, Object] options) -> Class
+
+      # _@param_ `definition`
+      # 
+      # _@return_ — an +::MCP::Tool+ subclass
+      def from: (Definition definition) -> Class
+
+      # _@param_ `definition`
+      # 
+      # _@return_ — an +::MCP::Tool+ subclass
+      def self.from: (Definition definition) -> Class
+
+      # _@param_ `hints`
+      def annotations: (::Hash[Symbol, bool] hints) -> ::Hash[Symbol, bool]?
+
+      # _@param_ `hints`
+      def self.annotations: (::Hash[Symbol, bool] hints) -> ::Hash[Symbol, bool]?
+    end
+
+    # Actions as RubyLLM tools.
+    # 
+    #   RefundTool = Actionable::Tools::RubyLLM.tool(RefundOrder,
+    #     description: 'Refund part or all of an order',
+    #     context: {user_id: ->(user) { user.id }})
+    #   chat.with_tool(RefundTool.new(current_user))
+    # 
+    # The tool's argument is what its context procs read. Every outcome comes
+    # back to the model as the Hash {Definition#call} documents.
+    module RubyLLM
+      # _@param_ `action`
+      # 
+      # _@param_ `approval` — pause each call until it's approved (RubyLLM's +requires_approval+)
+      # 
+      # _@param_ `options` — {Tools.definition}'s keywords
+      # 
+      # _@return_ — a +::RubyLLM::Tool+ subclass (ruby_llm ships no RBS
+      # signatures)
+      def tool: (singleton(Actionable::Action) action, ?approval: bool, **::Hash[Symbol, Object] options) -> Class
+
+      # _@param_ `action`
+      # 
+      # _@param_ `approval` — pause each call until it's approved (RubyLLM's +requires_approval+)
+      # 
+      # _@param_ `options` — {Tools.definition}'s keywords
+      # 
+      # _@return_ — a +::RubyLLM::Tool+ subclass (ruby_llm ships no RBS
+      # signatures)
+      def self.tool: (singleton(Actionable::Action) action, ?approval: bool, **::Hash[Symbol, Object] options) -> Class
+
+      # _@param_ `definition`
+      # 
+      # _@param_ `approval`
+      # 
+      # _@return_ — a +::RubyLLM::Tool+ subclass
+      def from: (Definition definition, ?approval: bool) -> Class
+
+      # _@param_ `definition`
+      # 
+      # _@param_ `approval`
+      # 
+      # _@return_ — a +::RubyLLM::Tool+ subclass
+      def self.from: (Definition definition, ?approval: bool) -> Class
+    end
+  end
+end

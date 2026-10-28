@@ -38,6 +38,7 @@ jobs:
       matrix:
         gem:
           - actionable-otel
+          - actionable-tools
           - field_struct-avro
           - field_struct-json_schema
         ruby:

@@ -5,6 +5,7 @@ Optional gems that connect [field_struct](https://github.com/aemadrid-twx/field_
 | Gem | What it does | Status |
 |---|---|---|
 | [actionable-otel](actionable-otel) | OpenTelemetry spans for actionable runs, steps and hooks, with outcome and code attributes and no input or output values | 0.1.0, unreleased |
+| [actionable-tools](actionable-tools) | Actionable actions as LLM tools, over MCP or RubyLLM: input and result JSON Schemas, server-supplied context fields, one result shape for every outcome | 0.1.0, unreleased draft |
 | [field_struct-avro](field_struct-avro) | Apache Avro record schemas, and instances to and from Avro binary, for Kafka, data lakes and schema registries | 0.1.0, unreleased |
 | [field_struct-json_schema](field_struct-json_schema) | JSON Schema (draft 2020-12) of a class's JSON, for API docs, LLM tool parameters, MCP and validators in other languages | 0.1.0, unreleased |
 
@@ -20,6 +21,7 @@ gem 'field_struct-avro', git: 'https://github.com/aemadrid-twx/field_struct-adap
 gem 'field_struct-json_schema', git: 'https://github.com/aemadrid-twx/field_struct-adapters', glob: 'field_struct-json_schema/*.gemspec'
 
 gem 'actionable-otel', git: 'https://github.com/aemadrid-twx/field_struct-adapters', glob: 'actionable-otel/*.gemspec'
+gem 'actionable-tools', git: 'https://github.com/aemadrid-twx/field_struct-adapters', glob: 'actionable-tools/*.gemspec'
 ```
 
 ## Type signatures
