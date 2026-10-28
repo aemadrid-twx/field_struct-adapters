@@ -23,6 +23,7 @@ jobs:
       fail-fast: false
       matrix:
         gem:
+          - actionable-otel
           - field_struct-avro
           - field_struct-json_schema
         ruby:

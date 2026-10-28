@@ -1,0 +1,277 @@
+# frozen_string_literal: true
+
+# The OpenTelemetry adapter against the real SDK (configured in spec_helper).
+RSpec.describe Actionable::Otel do
+  before { OTEL_SPEC_EXPORTER.reset }
+
+  after do
+    Actionable::Otel.step_spans = true
+    Actionable::Otel.exception_details = :type_only
+  end
+
+  let(:spans) { OTEL_SPEC_EXPORTER.finished_spans }
+
+  def span_named(name)
+    found = spans.select { |span| span.name == name }
+    raise "expected one span named #{name.inspect}, got #{spans.map(&:name).inspect}" unless found.one?
+
+    found.first
+  end
+
+  def error?(span) = span.status.code == OpenTelemetry::Trace::Status::ERROR
+
+  describe 'the run span' do
+    before do
+      stub_const('Charge', Class.new(Actionable::Action) do
+        step :authorize
+        def authorize = nil
+      end)
+    end
+
+    it 'emits one span per run, named after the action, with the outcome and code' do
+      Charge.run
+      span = span_named('Charge.run')
+
+      expect(span.attributes).to include('actionable.action' => 'Charge', 'actionable.outcome' => 'success',
+        'actionable.code' => 'success')
+      expect(span.kind).to eq(:internal)
+      expect(error?(span)).to be(false)
+    end
+
+    it "comes from the 'actionable' tracer at this gem's version" do
+      Charge.run
+
+      scope = span_named('Charge.run').instrumentation_scope
+      expect([scope.name, scope.version]).to eq(['actionable', Actionable::Otel::VERSION])
+    end
+
+    it 'emits a span per item of run_each' do
+      Charge.run_each([{}, {}])
+
+      expect(spans.map(&:name).count('Charge.run')).to eq(2)
+    end
+
+    it 'leaves the result and its history untouched' do
+      Charge.measure :all
+      result = Charge.run
+
+      expect(result).to be_success
+      expect(result.history.steps.map(&:name)).to eq([:authorize])
+    end
+  end
+
+  describe 'outcomes' do
+    it 'marks a failure as an error carrying the code, without an exception event' do
+      stub_const('Refuse', Class.new(Actionable::Action) do
+        step :go
+        def go = fail!(:card_declined, 'declined')
+      end)
+      Refuse.run
+      span = span_named('Refuse.run')
+
+      expect(span.attributes).to include('actionable.outcome' => 'failure', 'actionable.code' => 'card_declined')
+      expect(error?(span)).to be(true)
+      expect(span.status.description).to eq('card_declined')
+      expect(span.events.to_a).to be_empty
+    end
+
+    it 'does not mark a skip as an error' do
+      stub_const('Idle', Class.new(Actionable::Action) do
+        step :go
+        def go = skip!(:nothing_to_do)
+      end)
+      Idle.run
+      span = span_named('Idle.run')
+
+      expect(span.attributes).to include('actionable.outcome' => 'skipped', 'actionable.code' => 'nothing_to_do')
+      expect(error?(span)).to be(false)
+    end
+
+    it 'traces an invalid-input run, which never reaches the steps' do
+      stub_const('Typed', Class.new(Actionable::Action) do
+        input { required :amount, :integer }
+        step :go
+        def go = nil
+      end)
+      Typed.run
+
+      expect(span_named('Typed.run').attributes).to include('actionable.code' => 'invalid_input')
+      expect(spans.map(&:name)).to eq(['Typed.run'])
+    end
+
+    it 'records an escaping exception once, on the run span, by type only, and re-raises it' do
+      stub_const('Boom', Class.new(Actionable::Action) do
+        input { required :card, :string }
+        step :go
+        def go = raise(ArgumentError, "gateway refused card #{input.card}")
+      end)
+
+      expect { Boom.run(card: '4111111111111111') }.to raise_error(ArgumentError, /4111/)
+      run_span = span_named('Boom.run')
+      step_span = span_named('Boom/go')
+      expect([error?(run_span), error?(step_span)]).to eq([true, true])
+      expect(run_span.events.map { |event| [event.name, event.attributes] })
+        .to eq([['exception', {'exception.type' => 'ArgumentError'}]])
+      expect(step_span.events).to be_nil
+      expect(run_span.attributes).not_to have_key('actionable.outcome')
+      expect(spans.inspect).not_to include('4111')
+    end
+
+    it 'records the message and backtrace too under exception_details = :full' do
+      Actionable::Otel.exception_details = :full
+      stub_const('Boom', Class.new(Actionable::Action) do
+        step :go
+        def go = raise(ArgumentError, 'bad')
+      end)
+
+      expect { Boom.run }.to raise_error(ArgumentError, 'bad')
+      events = span_named('Boom.run').events
+      expect(events.size).to eq(1)
+      event = events.first
+      expect(event.attributes).to include('exception.type' => 'ArgumentError', 'exception.message' => 'bad',
+        'exception.stacktrace' => a_string_including('tracing_spec.rb'))
+      expect(span_named('Boom/go').events).to be_nil
+    end
+
+    it 'refuses an unknown exception_details level' do
+      expect { Actionable::Otel.exception_details = :message }
+        .to raise_error(ArgumentError, /must be :type_only or :full, got :message/)
+    end
+  end
+
+  describe 'step spans' do
+    before do
+      stub_const('Checkout', Class.new(Actionable::Action) do
+        step :reserve
+        step :never, if: :never?
+        step :charge
+        on_success :notify
+        always :audit
+
+        def reserve = nil
+        def never = nil
+        def never? = false
+        def charge = succeed('charged')
+        def notify = nil
+        def audit = nil
+      end)
+    end
+
+    it 'emits a child span per executed step and hook, under the run span' do
+      Checkout.run
+      run = span_named('Checkout.run')
+      children = spans.select { |span| span.parent_span_id == run.span_id }
+
+      expect(children.map(&:name)).to eq(%w[Checkout/reserve Checkout/charge Checkout/notify Checkout/audit])
+      expect(children.map { |span| span.attributes['actionable.section'] }).to eq(%w[main main success always])
+      expect(children.map { |span| span.attributes['actionable.step'] }).to eq(%w[reserve charge notify audit])
+      expect(children.map { |span| span.attributes['actionable.action'] }.uniq).to eq(['Checkout'])
+    end
+
+    it "says each step's kind; a case step's span is named after its value method" do
+      stub_const('Child', Class.new(Actionable::Action) do
+        step :go
+        def go = nil
+      end)
+      stub_const('Router', Class.new(Actionable::Action) do
+        step :prepare
+        step Child
+        case_step :mode do
+          on 'fast', :go_fast
+        end
+
+        def prepare = nil
+        def mode = 'fast'
+        def go_fast = nil
+      end)
+      Router.run
+
+      kinds = %w[Router/prepare Router/Child Router/mode].map { |name| span_named(name).attributes['actionable.step.kind'] }
+      expect(kinds).to eq(%w[method action case])
+      expect(spans.map(&:name)).not_to include('Router/go_fast')
+    end
+
+    it 'puts the code on a step span only when that step recorded the result' do
+      Checkout.run
+
+      expect(span_named('Checkout/charge').attributes).to include('actionable.code' => 'success')
+      expect(span_named('Checkout/reserve').attributes).not_to have_key('actionable.code')
+    end
+
+    it 'records the code of a step that halts' do
+      stub_const('Halting', Class.new(Actionable::Action) do
+        step :go
+        step :after
+        def go = fail!(:stop)
+        def after = nil
+      end)
+      Halting.run
+
+      expect(span_named('Halting/go').attributes).to include('actionable.code' => 'stop')
+      expect(error?(span_named('Halting/go'))).to be(false)
+      expect(spans.map(&:name)).not_to include('Halting/after')
+    end
+
+    it 'emits only the run span when step_spans is off' do
+      Actionable::Otel.step_spans = false
+      Checkout.run
+
+      expect(spans.map(&:name)).to eq(['Checkout.run'])
+    end
+
+    it 'reads the setting back' do
+      expect(Actionable::Otel.step_spans?).to be(true)
+      expect(Actionable::Otel.step_spans = nil).to be_nil
+      expect(Actionable::Otel.step_spans?).to be(false)
+    end
+  end
+
+  it "nests a child action's run span under the parent's step span" do
+    stub_const('Child', Class.new(Actionable::Action) do
+      step :work
+      def work = nil
+    end)
+    stub_const('Parent', Class.new(Actionable::Action) do
+      step Child
+    end)
+    Parent.run
+    step = span_named('Parent/Child')
+
+    expect(step.parent_span_id).to eq(span_named('Parent.run').span_id)
+    expect(span_named('Child.run').parent_span_id).to eq(step.span_id)
+    expect(span_named('Child/work').parent_span_id).to eq(span_named('Child.run').span_id)
+    expect(spans.map(&:trace_id).uniq.size).to eq(1)
+  end
+
+  it 'never records input or output values' do
+    stub_const('Pay', Class.new(Actionable::Action) do
+      input { required :card_number, :string }
+      output { required :token, :string }
+      step :tokenize
+      def tokenize = @token = "tok-#{input.card_number}"
+    end)
+    Pay.run(card_number: '4111111111111111')
+    values = spans.flat_map { |span| span.attributes.values }
+
+    expect(values.grep(/4111/)).to be_empty
+  end
+
+  context 'with a stubbed run' do
+    include Actionable::RSpec::Stubs
+
+    it 'emits no span' do
+      stub_const('Stubbed', Class.new(Actionable::Action) { step(:go) && define_method(:go) { nil } })
+      stub_actionable_success Stubbed
+
+      expect(Stubbed.run).to be_success
+      expect(spans).to be_empty
+    end
+  end
+
+  it 'names an anonymous action generically' do
+    Class.new(Actionable::Action) { step(:go) && define_method(:go) { nil } }.run
+
+    expect(spans.map(&:name)).to contain_exactly('Actionable::Action.run', 'Actionable::Action/go')
+    expect(span_named('Actionable::Action.run').attributes['actionable.action']).to eq('Actionable::Action')
+  end
+end

@@ -1,0 +1,15 @@
+# frozen_string_literal: true
+
+source 'https://rubygems.org'
+
+gemspec
+
+# Build against actionable's newest code; the gemspec's range is what users get.
+gem 'actionable-rb', git: 'https://github.com/aemadrid-twx/actionable', branch: 'main'
+
+# Specs only, for its in-memory span exporter; users bring their own SDK.
+gem 'opentelemetry-sdk', '~> 1.13'
+
+gem 'rake', '~> 13.0'
+gem 'rspec', '~> 3.13'
+gem 'rubocop', '~> 1.60', require: false
