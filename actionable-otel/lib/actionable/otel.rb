@@ -132,15 +132,19 @@ module Actionable
 
       # The tracer for the current provider, so a provider installed after
       # this file loads still applies. Cached per provider: asking the SDK
-      # takes a mutex and allocates on every call.
+      # takes a mutex and allocates on every call. The provider and its
+      # tracer are one frozen pair, so another thread never sees a new
+      # provider next to the old one's tracer.
       #
       # @return [Object] an +OpenTelemetry::Trace::Tracer+
       def tracer
         provider = OpenTelemetry.tracer_provider
-        return @tracer if @tracer && @tracer_provider.equal?(provider)
+        pair = @tracer
+        return pair[1] if pair && pair[0].equal?(provider)
 
-        @tracer_provider = provider
-        @tracer = provider.tracer(name: TRACER_NAME, version: VERSION)
+        made = provider.tracer(name: TRACER_NAME, version: VERSION)
+        @tracer = [provider, made].freeze
+        made
       end
 
       # @param span [Object] the +OpenTelemetry::Trace::Span+
