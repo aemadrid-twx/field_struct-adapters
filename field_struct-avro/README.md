@@ -78,6 +78,24 @@ end
 error.start_with?("FieldStruct::Avro can't read these bytes: total: written as decimal (scale 3)") # => true
 ```
 
+`schema` builds and parses the schema, so a field option the avro gem can't parse raises there, naming the class, instead of at the first `encode`. Call it at boot, or in a test, for each root class with the options you use (`serialization:`, `timestamp:`), to find those early. A nested struct is covered by its root:
+
+<!-- doctest -->
+```ruby
+require 'field_struct/avro'
+
+class Typo < FieldStruct::Base
+  required :note, :string, avro: {type: 'strng'}
+end
+
+error = begin
+  FieldStruct::Avro.schema(Typo)
+rescue ArgumentError => e
+  e.message
+end
+error.start_with?("FieldStruct::Avro: Typo doesn't make a valid Avro schema") # => true
+```
+
 ## Mapping
 
 | FieldStruct | Avro | Notes |
