@@ -113,7 +113,7 @@ module FieldStruct
         return false if taken.first == owner
 
         raise ArgumentError, "FieldStruct::Avro: #{label} and #{taken.last} both become Avro #{full_name}; " \
-                             "#{fix || 'rename one of the fields'}"
+                             "#{fix || "rename one of the fields"}"
       end
 
       # @param klass [Class<FieldStruct::Base>] a class already defined in this schema
