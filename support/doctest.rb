@@ -8,11 +8,12 @@ require 'rbconfig'
 # `<!-- doctest -->` line runs, and each `expr # => expected` line in it is an
 # assertion (both sides are evaluated and compared with ==), and so is a
 # one-line expression followed by `# =>` comment lines holding a value that
-# wraps. An
-# expected value written as an inspect string (`#<Invoice ...>`) is shown, not
-# checked. Anything else that would check nothing raises instead of passing
-# quietly: a marker with no ```ruby block after it, a README with no doctest
-# blocks, and a `# =>` value that isn't Ruby.
+# wraps. An expected value written as an inspect string (`#<Invoice ...>`) is
+# shown, not checked. Anything else that would check nothing raises instead of
+# passing quietly: a marker with no ```ruby block after it, a README with no
+# doctest blocks, a `# =>` with no value or no expression before it, and a
+# value that isn't Ruby. A `# =>` inside a string or heredoc in the example
+# is read as an arrow too, so keep those out of doctest blocks.
 #
 # Each block runs in its own Ruby process, at the top level: adapters need
 # classes with real names (an Avro record is named after its class), which a
@@ -42,7 +43,7 @@ module Doctest
   def blocks(path)
     lines = File.readlines(path)
     found = lines.each_index.filter_map do |index|
-      next unless lines[index].match?(/<!--\s*doctest\s*-->/)
+      next unless lines[index].match?(/\A\s*<!--\s*doctest\s*-->\s*\z/)
 
       fence = index + 1
       fence += 1 while fence < lines.length && lines[fence].strip.empty?
@@ -82,9 +83,13 @@ module Doctest
     while index < lines.length
       line = lines[index]
       label = "#{File.basename(block.path)}:#{block.line + index}"
+      if line.match?(/\A\s*#{ARROW}/)
+        raise ArgumentError, "#{label}: a # => needs the expression on the line right before it"
+      end
+
       if line.strip.start_with?('#')
         out << line
-      elsif (match = line.chomp.match(/\A(\s*)(\S.*?)\s*#{ARROW}(.+)\z/))
+      elsif (match = line.chomp.match(/\A(\s*)(\S.*?)\s*#{ARROW}(.*)\z/))
         expected, taken = wrapped_value(match[3], lines, index + 1, label)
         out << (expected ? assertion(match[1], match[2], expected, label) : line)
         out.concat(["\n"] * taken) # keep line numbers stable
@@ -119,9 +124,10 @@ module Doctest
   #   continuation lines it took
   # @raise [ArgumentError] when the value never becomes Ruby
   def wrapped_value(value, lines, next_line, label)
+    value = value.strip
+    raise ArgumentError, "#{label}: a # => with no value after it" if value.empty?
     return [nil, 0] if value.start_with?('#<')
 
-    value = value.dup
     taken = 0
     until ruby?(value)
       continuation = lines[next_line + taken]
