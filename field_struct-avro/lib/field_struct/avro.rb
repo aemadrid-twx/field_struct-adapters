@@ -51,10 +51,10 @@ module FieldStruct
     #   isn't valid Avro (say, a typo in an +avro: {type:}+ option)
     def self.schema(klass, serialization: :avro, timestamp: :micros)
       serialization = check(klass, serialization, timestamp)
-      # Parsing (cached) here makes a bad option fail where the schema is
-      # asked for, at boot or registration, not at the first encode.
-      CACHE.reader(klass, serialization, timestamp)
-      SchemaBuilder.new(klass, serialization:, timestamp:).schema
+      # Going through the reader cache makes a bad option fail where the
+      # schema is asked for (at boot or registration, not the first encode),
+      # and builds the schema once per class; each call gets its own copy.
+      Cache.deep_copy(CACHE.reader(klass, serialization, timestamp).schema)
     end
 
     # @param struct [FieldStruct::Base]
