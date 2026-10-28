@@ -259,6 +259,14 @@ RSpec.describe FieldStruct::Avro, '.schema' do
     expect(schema_of(klass)['fields']).to eq([{'name' => 'pan', 'doc' => 'Card number', 'type' => 'string', 'x-fs-sensitive' => true}])
   end
 
+  it "keeps a sensitive field's default and enum symbols, which are schema, not data" do
+    klass = struct('Tier') { required :level, :symbol, enum: %i[basic gold], default: :basic, sensitive: true }
+
+    field = schema_of(klass)['fields'][0]
+    expect(field).to include('default' => 'basic', 'x-fs-sensitive' => true)
+    expect(field['type']).to include('symbols' => %w[basic gold])
+  end
+
   it 'uses serialize names, and refuses one Avro cannot use' do
     klass = struct('Contact') do
       required :first_name, :string
