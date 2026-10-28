@@ -90,9 +90,9 @@ module Actionable
       # result's outcome and code on it. Called by {ActionRun}.
       #
       # @api private
-      # @param action [Class<Action>] the action being run
-      # @yieldreturn [Result] the run's result
-      # @return [Result] the block's result
+      # @param action [Class<Actionable::Action>] the action being run
+      # @yieldreturn [Actionable::Result] the run's result
+      # @return [Actionable::Result] the block's result
       def trace_run(action)
         label = label_for(action)
         attributes = {'actionable.action' => label}
@@ -111,9 +111,9 @@ module Actionable
       # halted). Called by {RunnerSteps}.
       #
       # @api private
-      # @param instance [Action] the running action instance
+      # @param instance [Actionable::Action] the running action instance
       # @param section [Symbol] where the step runs: +:main+ or a hook phase
-      # @param step [Steps::Base] the step
+      # @param step [Actionable::Steps::Base] the step
       # @yieldreturn [Object]
       # @return [Object] the block's value
       def trace_step(instance, section, step, &block)
@@ -155,7 +155,7 @@ module Actionable
       end
 
       # @param span [Object] the +OpenTelemetry::Trace::Span+
-      # @param result [Result]
+      # @param result [Actionable::Result]
       # @return [void]
       def annotate_run(span, result)
         code = result.code.to_s
@@ -164,7 +164,7 @@ module Actionable
         span.status = OpenTelemetry::Trace::Status.error(code) if result.failure?
       end
 
-      # @param instance [Action]
+      # @param instance [Actionable::Action]
       # @param span [Object] the +OpenTelemetry::Trace::Span+
       # @yieldreturn [Object]
       # @return [Object] the block's value
@@ -190,7 +190,7 @@ module Actionable
       #
       # @param args [Object] forwarded to +.run+
       # @param kwargs [Object] forwarded to +.run+
-      # @return [Result]
+      # @return [Actionable::Result]
       def run(*args, **kwargs)
         Otel.trace_run(self) { super }
       end
@@ -202,7 +202,7 @@ module Actionable
       private
 
       # @param section [Symbol]
-      # @param step [Steps::Base]
+      # @param step [Actionable::Steps::Base]
       # @return [void]
       def record(section, step, &)
         return super unless Otel.step_spans?

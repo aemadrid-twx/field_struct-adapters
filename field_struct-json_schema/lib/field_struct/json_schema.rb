@@ -185,7 +185,7 @@ module FieldStruct
         out
       end
 
-      # @param property [Introspection::Property]
+      # @param property [FieldStruct::Introspection::Property]
       # @return [Hash{String=>Object}]
       def property_schema(property)
         field = property.field
@@ -198,7 +198,7 @@ module FieldStruct
       # when the field is String-family and its schema would refuse one.
       #
       # @param schema [Hash{String=>Object}]
-      # @param type [Types::Base]
+      # @param type [FieldStruct::Types::Base]
       # @return [Hash{String=>Object}]
       def optional(schema, type)
         schema = nullable(schema)
@@ -207,7 +207,7 @@ module FieldStruct
         {'anyOf' => [schema, BLANK_STRING]}
       end
 
-      # @param field [Field]
+      # @param field [FieldStruct::Field]
       # @return [Hash{String=>Object}]
       def annotations(field)
         out = {}
@@ -222,7 +222,7 @@ module FieldStruct
       # without coercing: a literal of the field's own JSON type. Anything
       # else (a callable, a value the setter would convert) is left out.
       #
-      # @param field [Field]
+      # @param field [FieldStruct::Field]
       # @return [Object, nil]
       def json_default(field)
         value = field.default
@@ -250,8 +250,8 @@ module FieldStruct
       # The node's schema: what its type's own +json_schema+ method returns,
       # when the type defines one, else derived from the node.
       #
-      # @param node [Introspection::ScalarNode, Introspection::ArrayNode,
-      #   Introspection::UnionNode, Introspection::StructNode]
+      # @param node [FieldStruct::Introspection::ScalarNode, FieldStruct::Introspection::ArrayNode,
+      #   FieldStruct::Introspection::UnionNode, FieldStruct::Introspection::StructNode]
       # @return [Hash{String=>Object}]
       def node_schema(node)
         override(node.type.respond_to?(:json_schema) ? node.type.json_schema : nil) ||
@@ -263,7 +263,7 @@ module FieldStruct
           end
       end
 
-      # @param node [Introspection::ArrayNode]
+      # @param node [FieldStruct::Introspection::ArrayNode]
       # @return [Hash{String=>Object}]
       def array_schema(node)
         # An array of arrays or of unions carries no element type to describe.
@@ -273,7 +273,7 @@ module FieldStruct
         {'type' => 'array', 'items' => nullable(node_schema(node.element))}
       end
 
-      # @param node [Introspection::UnionNode]
+      # @param node [FieldStruct::Introspection::UnionNode]
       # @return [Hash{String=>Object}] +{}+ when a member accepts anything
       def union_schema(node)
         members = node.members.map { |member| node_schema(member) }
@@ -307,7 +307,7 @@ module FieldStruct
         @inlining.delete(klass)
       end
 
-      # @param type [Types::Base]
+      # @param type [FieldStruct::Types::Base]
       # @param options [Hash{Symbol=>Object}]
       # @return [Hash{String=>Object}]
       def scalar_schema(type, options)
@@ -333,7 +333,7 @@ module FieldStruct
       # +email+ and +uri+ formats are stricter than our defaults, so those
       # become patterns; the default UUID Regexp is exactly +format: uuid+.
       #
-      # @param type [Types::String] a String-family type
+      # @param type [FieldStruct::Types::String] a String-family type
       # @param options [Hash{Symbol=>Object}]
       # @return [Hash{String=>Object}]
       def string_schema(type, options)
@@ -393,7 +393,7 @@ module FieldStruct
         bound.is_a?(::Integer) || bound.is_a?(::Float) ? bound : bound.to_f
       end
 
-      # @param type [Types::Base] a type FieldStruct doesn't ship
+      # @param type [FieldStruct::Types::Base] a type FieldStruct doesn't ship
       # @return [Hash{String=>Object}]
       def custom_schema(type)
         ruby_type = type.ruby_type
