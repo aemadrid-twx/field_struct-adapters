@@ -56,12 +56,22 @@ module FieldStruct
         end
       end
 
+      # A +:value+ member is tried last: its Ruby type is Object, so it would
+      # claim a 5 that an +:integer+ member should write as a long.
+      #
       # @param value [Object]
       # @param node [FieldStruct::Introspection::UnionNode]
       # @return [Object]
       def dump_union(value, node)
-        member = node.members.find { |candidate| member_of?(value, candidate) }
+        ordered = node.members.sort_by.with_index { |candidate, index| [value_node?(candidate) ? 1 : 0, index] }
+        member = ordered.find { |candidate| member_of?(value, candidate) }
         member ? dump_value(value, member) : value
+      end
+
+      # @param node [Object]
+      # @return [Boolean]
+      def value_node?(node)
+        node.is_a?(Introspection::ScalarNode) && node.type.is_a?(FieldStruct::Types::Value)
       end
 
       # @param value [Object]
@@ -153,12 +163,18 @@ module FieldStruct
       end
 
       # A record datum carries no branch name, so it loads as the struct
-      # member whose keys it has; anything else goes to the union as is.
+      # member whose keys it has. A string is a +:value+ member's JSON
+      # when the union has one: only one member can be Avro +string+ (the
+      # schema refuses two). Anything else goes to the union as is.
       #
       # @param value [Object]
       # @param node [FieldStruct::Introspection::UnionNode]
       # @return [Object]
       def load_union(value, node)
+        if value.is_a?(::String)
+          member = node.members.find { |candidate| value_node?(candidate) }
+          return member ? load_scalar(value, member) : value
+        end
         return value unless value.is_a?(::Hash)
 
         member = node.members.find do |candidate|

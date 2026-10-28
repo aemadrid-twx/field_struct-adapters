@@ -152,8 +152,50 @@ module FieldStruct
         clash = slots.find { |slot| slots.count(slot) > 1 }
         raise ArgumentError, "FieldStruct::Avro can't describe #{name}: two union members both become Avro #{clash}" if clash
 
+        check_struct_members(node, name)
+
         # The writer takes the first branch that fits, and 5 fits double.
         members.sort_by.with_index { |member, index| [union_slot(member) == 'long' ? 0 : 1, index] }
+      end
+
+      # Avro writes a union datum as the first branch it fits, and a record
+      # fits any Hash holding its required keys (extra keys are ignored), so
+      # an earlier struct member whose required keys a later one also has
+      # would swallow it: the later struct is written as the earlier one and
+      # loses its other fields. Two members with the same keys also can't be
+      # told apart when read back.
+      #
+      # @param node [FieldStruct::Introspection::UnionNode]
+      # @param name [String]
+      # @return [void]
+      # @raise [ArgumentError]
+      def check_struct_members(node, name)
+        structs = node.members.grep(Introspection::StructNode).map(&:klass)
+        structs.each_with_index do |earlier, index|
+          required = struct_keys(earlier, required_only: true)
+          later = structs.drop(index + 1).find { |klass| (required - struct_keys(klass)).empty? }
+          next unless later
+
+          # Swapping helps only when the earlier one wouldn't then fit the later.
+          swap = (struct_keys(later, required_only: true) - struct_keys(earlier)).empty? ? '' : ", or put #{later} first"
+          why = required.empty? ? "#{earlier} has no required fields, so any record fits it" : "every required field of #{earlier} is in #{later}"
+          raise ArgumentError, "FieldStruct::Avro can't describe #{name}: a #{later} would be written as " \
+                               "#{earlier}, which Avro picks by shape (#{why}). Give the structs distinct required fields#{swap}"
+        end
+      end
+
+      # A required field with an +avro: {type:}+ override may have been made
+      # nullable, so it doesn't count as required here.
+      #
+      # @param klass [Class<FieldStruct::Base>]
+      # @param required_only [Boolean]
+      # @return [Array<String>] the Avro field names
+      def struct_keys(klass, required_only: false)
+        properties = Introspection.properties(klass, serialization: @serialization)
+        if required_only
+          properties = properties.select { |property| property.field.required? && !avro_options(property.node).key?(:type) }
+        end
+        properties.map(&:key)
       end
 
       # @param type [String, Hash{String=>Object}]
