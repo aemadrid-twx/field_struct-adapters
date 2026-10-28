@@ -196,13 +196,13 @@ RSpec.describe FieldStruct::Avro, '.schema' do
     # round: -1 leaves no fractional digits, which scale 0 holds exactly.
     expect(field_type(tens, :n)).to include('scale' => 0)
     expect(FieldStruct::Avro.decode(tens, FieldStruct::Avro.encode(tens.new(n: '123')))).to eq(tens.new(n: '123'))
-    expect { described_class.schema(wide) }.to raise_error(ArgumentError, /Wide_n: scale 40 is more than precision 38/)
-    expect { described_class.schema(narrow) }.to raise_error(ArgumentError, /Narrow_n: precision 0 must be at least 1/)
+    expect { described_class.schema(wide) }.to raise_error(ArgumentError, /can't describe Wide#n \(Avro Wide_n\): scale 40 is more than precision 38/)
+    expect { described_class.schema(narrow) }.to raise_error(ArgumentError, /can't describe Narrow#n \(Avro Narrow_n\): precision 0 must be at least 1/)
     # Scale may equal precision: every digit is fractional.
     expect(field_type(struct('Edge') { required :n, :big_decimal, avro: {precision: 2, scale: 2} }, :n))
       .to include('precision' => 2, 'scale' => 2)
     expect { described_class.schema(struct('Text') { required :n, :big_decimal, round: 2, avro: {precision: '12'} }) }
-      .to raise_error(ArgumentError, /Text_n: decimal precision and scale must be integers, got "12" and 2/)
+      .to raise_error(ArgumentError, /can't describe Text#n \(Avro Text_n\): decimal precision and scale must be integers, got "12" and 2/)
   end
 
   it 'writes a float default as a double, even when given as an integer' do
@@ -287,6 +287,23 @@ RSpec.describe FieldStruct::Avro, '.schema' do
     grid = struct('Grid') { required :rows, :array, of: :array }
     expect { described_class.schema(grid) }.to raise_error(ArgumentError, /records no element type/)
     expect { described_class.schema(Class.new(FieldStruct::Base)) }.to raise_error(ArgumentError, /needs a named class/)
+  end
+
+  it 'names the field as Class#field in its errors, with the Avro name beside it' do
+    wide = struct('Billing::Wide') do
+      required :grand_total, :big_decimal, round: 40
+      serialize :avro, grand_total: 'grandTotal'
+    end
+    expect { described_class.schema(wide) }
+      .to raise_error(ArgumentError, /can't describe Billing::Wide#grand_total \(Avro Wide_grandTotal\): scale 40/)
+
+    mixed = struct('Mixed') { required :amount, :union, of: %i[string value] }
+    expect { described_class.schema(mixed) }.to raise_error(ArgumentError, /can't describe Mixed#amount \(Avro Mixed_amount\): two union members/)
+
+    inner = Class.new(FieldStruct::Base) { required :at, :time, avro: {timestamp: :seconds} }
+    holder = struct('Holder') { required :inner, inner }
+    expect { described_class.schema(holder) }
+      .to raise_error(ArgumentError, /\AFieldStruct::Avro \(Holder#inner\.at\) avro: \{timestamp:\} must be one of/)
   end
 
   it "refuses an avro: option the avro gem can't parse when the schema is asked for, not at the first encode" do
