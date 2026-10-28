@@ -556,6 +556,26 @@ RSpec.describe FieldStruct::Avro, 'encode and decode' do
     expect { described_class.schema(flagged) }.to raise_error(ArgumentError, /FalseOverride doesn't make a valid Avro schema/)
   end
 
+  it "says which fields are wrong when the avro gem can't write an invalid instance, keeping values out" do
+    klass = struct('Signup') do
+      required :id, :integer
+      required :pin, :string, sensitive: true
+    end
+
+    expect { described_class.encode(klass.new(id: 'abc', pin: 1234)) }.to raise_error(ArgumentError) { |error|
+      expect(error.message).to start_with("FieldStruct::Avro can't encode an invalid Signup: Id could not be coerced")
+      expect(error.message).not_to include('abc')
+      expect(error.cause).to be_nil # the avro gem's error quotes the value
+    }
+    lock = struct('Lock') { required :pin, :integer, sensitive: true }
+    expect { described_class.encode(lock.new(pin: 'hunter2')) }.to raise_error(ArgumentError) { |error|
+      expect(error.message).to start_with("FieldStruct::Avro can't encode an invalid Lock: Pin")
+      expect(error.full_message).not_to include('hunter2')
+    }
+    expect { described_class.encode(klass.new(pin: 'x')) }
+      .to raise_error(ArgumentError, "FieldStruct::Avro can't encode an invalid Signup: Id is required")
+  end
+
   it 'raises on a symbol the reader enum lacks, naming the field, unless the reader has an enum_default' do
     writer = struct('Status::V2') { required :s, :symbol, enum: %i[open paid void] }
     bytes = described_class.encode(writer.new(s: :void))
