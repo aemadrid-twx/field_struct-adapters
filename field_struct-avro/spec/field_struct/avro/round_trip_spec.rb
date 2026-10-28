@@ -256,6 +256,25 @@ RSpec.describe FieldStruct::Avro, 'encode and decode' do
       .to raise_error(ArgumentError, /on: written as date, read as timestamp-micros/)
   end
 
+  it 'checks optional fields the way the avro gem pairs their union branches' do
+    day = struct('Opt::Day') { optional :on, :date }
+    moment = struct('Opt::Moment') { optional :on, :time }
+    bytes = described_class.encode(day.new(on: '2026-10-27'))
+    expect { described_class.decode(moment, bytes, writer_schema: described_class.schema(day).merge('name' => 'Moment')) }
+      .to raise_error(ArgumentError, /on: written as date, read as timestamp-micros/)
+
+    exact = struct('Opt::Exact') { optional :amt, :big_decimal, round: 2 }
+    text = struct('Opt::Text') { optional :amt, :big_decimal }
+    bytes = described_class.encode(exact.new(amt: '12.34'))
+    expect { described_class.decode(text, bytes, writer_schema: described_class.schema(exact).merge('name' => 'Text')) }
+      .to raise_error(ArgumentError, /amt: written as decimal \(scale 2\), read as string/)
+
+    count = struct('Opt::Count') { optional :n, :integer }
+    big = struct('Opt::Big') { optional :n, :float }
+    bytes = described_class.encode(count.new(n: 7))
+    expect(described_class.decode(big, bytes, writer_schema: described_class.schema(count).merge('name' => 'Big'))).to eq(big.new(n: 7.0))
+  end
+
   it 'checks a recursive struct once, and a field that went from optional to required' do
     node = struct('Evo::Node') do
       required :name, :string

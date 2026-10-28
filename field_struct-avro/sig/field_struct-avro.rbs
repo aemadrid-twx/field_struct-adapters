@@ -250,11 +250,6 @@ module FieldStruct
       # _@param_ `writer` — an +::Avro::Schema+
       # 
       # _@param_ `reader` — an +::Avro::Schema+
-      def same_branch?: (Object writer, Object reader) -> bool
-
-      # _@param_ `writer` — an +::Avro::Schema+
-      # 
-      # _@param_ `reader` — an +::Avro::Schema+
       # 
       # _@param_ `path`
       # 

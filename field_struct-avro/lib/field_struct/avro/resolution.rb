@@ -63,18 +63,10 @@ module FieldStruct
       def union(writer, reader, path, seen)
         branches = writer.type_sym == :union ? writer.schemas : [writer]
         branches.flat_map do |branch|
-          match = reader.schemas.find { |candidate| same_branch?(branch, candidate) }
+          # The branch the avro gem itself picks, promotions included.
+          match = reader.schemas.find { |candidate| ::Avro::SchemaCompatibility.match_schemas(branch, candidate) }
           match ? compare(branch, match, path, seen) : []
         end
-      end
-
-      # @param writer [Object] an +::Avro::Schema+
-      # @param reader [Object] an +::Avro::Schema+
-      # @return [Boolean]
-      def same_branch?(writer, reader)
-        return false unless writer.type_sym == reader.type_sym
-
-        !writer.respond_to?(:fullname) || writer.fullname == reader.fullname
       end
 
       # @param writer [Object] an +::Avro::Schema+
