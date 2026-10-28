@@ -152,6 +152,44 @@ RSpec.describe FieldStruct::Avro, 'encode and decode' do
     expect(round_trip(klass.new(via: card.new(last4: '4242'), amount: 2.5))).to eq(klass.new(via: card.new(last4: '4242'), amount: 2.5))
   end
 
+  it "passes a field with avro: {type:} through as is, since the override is the user's mapping" do
+    klass = struct('Override') do
+      required :raw, :value, avro: {type: {'type' => 'map', 'values' => 'string'}}
+      required :code, :symbol, avro: {type: 'string'}
+      optional :tags, :array, of: :string, avro: {type: {'type' => 'array', 'items' => 'string'}}
+    end
+    event = klass.new(raw: {'a' => 'b'}, code: :ok, tags: %w[x y])
+
+    expect(described_class.to_datum(event)).to eq('raw' => {'a' => 'b'}, 'code' => 'ok', 'tags' => %w[x y])
+    expect(round_trip(event)).to eq(event)
+  end
+
+  it 'passes overridden structs, symbols in arrays and hashes, and zones through correctly' do
+    line = struct('Ovr::Line') do
+      required :sku, :string
+      optional :payload, :value
+      optional :seen, :time, zone: 'America/Denver'
+    end
+    record = described_class.schema(line)
+    klass = struct('Ovr::Order') do
+      required :lines, :array, of: line, avro: {type: {'type' => 'array', 'items' => record}}
+      required :marks, :array, of: :symbol, avro: {type: {'type' => 'array', 'items' => 'string'}}
+      required :meta, :value, avro: {type: {'type' => 'map', 'values' => 'string'}}
+      required :note, :value, avro: {type: %w[null string]}
+      required :at, :time, zone: 'America/Denver', avro: {type: {'type' => 'long', 'logicalType' => 'timestamp-micros'}}
+    end
+    order = klass.new(lines: [{sku: 'a', payload: {'n' => 1}, seen: '2026-07-01 08:00:00'}], marks: %i[x y], meta: {k: :v}, note: {'n' => 1}, at: '2026-07-01 08:00:00')
+
+    datum = described_class.to_datum(order)
+    expect(datum.slice('lines', 'marks', 'meta', 'note'))
+      .to match('lines' => [hash_including('sku' => 'a', 'payload' => '{"n":1}')], 'marks' => %w[x y], 'meta' => {'k' => 'v'}, 'note' => '{"n":1}')
+    back = round_trip(order)
+    expect(back).to eq(klass.new(order.to_h.merge(meta: {'k' => 'v'})))
+    expect(back.at.utc_offset).to eq(-6 * 3600)
+    expect(back.lines.first.payload).to eq('n' => 1)
+    expect(back.lines.first.seen.utc_offset).to eq(-6 * 3600)
+  end
+
   it 'round-trips a :value member of a union as a value, not as JSON text, in either order' do
     first = struct('Mix::ValueFirst') { required :v, :union, of: %i[value integer] }
     last = struct('Mix::ValueLast') { required :v, :union, of: %i[integer value] }

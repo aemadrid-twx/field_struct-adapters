@@ -46,6 +46,7 @@ module FieldStruct
       # @return [Object]
       def dump_value(value, node)
         return nil if value.nil?
+        return raw(value) if override?(node)
 
         case node
         when Introspection::ArrayNode then value.map { |item| dump_value(item, node.element) }
@@ -118,11 +119,53 @@ module FieldStruct
                              'round it, or use timestamp: :nanos'
       end
 
-      # @param node [FieldStruct::Introspection::ScalarNode]
+      # @param node [Object]
       # @return [Hash{Symbol=>Object}]
       def avro_options(node)
-        options = node.options[:avro]
+        options = node.respond_to?(:options) ? node.options[:avro] : nil
         options.is_a?(::Hash) ? options : {}
+      end
+
+      # A field whose +avro: {type:}+ replaces its mapping: the user chose the
+      # Avro type, so the value travels as field_struct holds it.
+      #
+      # @param node [Object]
+      # @return [Boolean]
+      def override?(node)
+        avro = avro_options(node)
+        return false unless avro.key?(:type)
+
+        # A :value overridden to (nullable) string still holds JSON text.
+        !(value_node?(node) && (Array(avro[:type]) - ['null']) == ['string'])
+      end
+
+      # @param value [Object]
+      # @return [Object] +value+, with symbols as strings (Avro has none)
+      def raw(value)
+        case value
+        when ::Symbol then value.to_s
+        when FieldStruct::Base then dump(value)
+        when ::Array then value.map { |item| raw(item) }
+        when ::Hash then value.to_h { |key, item| [raw(key), raw(item)] }
+        else value
+        end
+      end
+
+      # The Avro type is the user's, but what {#raw} dumped comes back the
+      # same way: structs in an array through their own mappings, a time in
+      # its zone:.
+      #
+      # @param value [Object]
+      # @param node [FieldStruct::Introspection::ScalarNode, FieldStruct::Introspection::ArrayNode]
+      # @return [Object]
+      def load_override(value, node)
+        if node.is_a?(Introspection::ArrayNode) && node.element.is_a?(Introspection::StructNode) && value.is_a?(::Array)
+          value.map { |item| item.is_a?(::Hash) ? load(node.element.klass, item) : item }
+        elsif value.is_a?(::Time)
+          rezone(value, node.options[:zone])
+        else
+          value
+        end
       end
 
       # @param value [Object]
@@ -131,6 +174,7 @@ module FieldStruct
       # @return [Object]
       def load_value(value, node)
         return nil if value.nil?
+        return load_override(value, node) if override?(node)
 
         case node
         when Introspection::ArrayNode then value.map { |item| load_value(item, node.element) }
