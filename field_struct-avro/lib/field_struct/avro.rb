@@ -94,7 +94,7 @@ module FieldStruct
       raise if struct.valid?
 
       raise ArgumentError, "FieldStruct::Avro can't encode an invalid #{struct.class}: #{struct.errors.full_messages.join("; ")}",
-            cause: nil
+        cause: nil
     end
 
     # @param klass [Class<FieldStruct::Base>]
