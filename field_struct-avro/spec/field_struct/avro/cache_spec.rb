@@ -28,6 +28,22 @@ RSpec.describe FieldStruct::Avro::Cache do
     expect(FieldStruct::Avro::CACHE.reader(box, :avro, :nanos)).not_to be(first)
   end
 
+  it 'builds the schema Hash once, and hands each schema call its own copy' do
+    first = FieldStruct::Avro.schema(box)
+    allow(FieldStruct::Avro::SchemaBuilder).to receive(:new).and_call_original
+    second = FieldStruct::Avro.schema(box)
+
+    expect(FieldStruct::Avro::SchemaBuilder).not_to have_received(:new)
+    expect(second).to eq(first)
+    second['fields'].first['name'] << '_mine'
+    second['fields'] << {'name' => 'extra'}
+    expect(FieldStruct::Avro.schema(box)).to eq(first)
+    expect(FieldStruct::Avro::CACHE.reader(box, :avro, :micros).schema).to be_frozen
+
+    box.optional :later, :integer
+    expect(FieldStruct::Avro.schema(box)['fields'].map { |field| field['name'] }).to eq(%w[id part later])
+  end
+
   it 'picks up fields added or re-declared after first use, in the class or a nested one' do
     round_trip(box.new(id: 1, part: {sku: 'a'}))
 

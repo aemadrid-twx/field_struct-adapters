@@ -28,14 +28,19 @@ module FieldStruct
         attr_reader :records
         # @return [Hash{Class<FieldStruct::Base>=>Array<Object>}]
         attr_reader :stamps
+        # @return [Hash{String=>Object}] the schema {FieldStruct::Avro.schema}
+        #   copies, deeply frozen
+        attr_reader :schema
 
         # @param parsed [Object]
         # @param records [Hash{Class<FieldStruct::Base>=>Array<String>}]
         # @param stamps [Hash{Class<FieldStruct::Base>=>Array<Object>}]
-        def initialize(parsed, records, stamps)
+        # @param schema [Hash{String=>Object}]
+        def initialize(parsed, records, stamps, schema)
           @parsed = parsed
           @records = records
           @stamps = stamps
+          @schema = schema
           freeze
         end
       end
@@ -79,9 +84,10 @@ module FieldStruct
         return entry if entry && fresh?(entry.stamps, serialization)
 
         builder = SchemaBuilder.new(klass, serialization:, timestamp:)
-        parsed = parse(klass, builder.schema)
+        schema = builder.schema
+        parsed = parse(klass, schema)
         records = builder.records.transform_values(&:freeze).freeze
-        entry = Reader.new(parsed, records, builder.stamps.freeze)
+        entry = Reader.new(parsed, records, builder.stamps.freeze, Cache.deep_freeze(Cache.deep_copy(schema)))
         @lock.synchronize do
           stale = @readers[key]
           @writers.delete_if { |(_, owner), _| owner.equal?(stale) } if stale
@@ -173,6 +179,28 @@ module FieldStruct
       def self.stamp(klass, serialization)
         meta = klass.metadata
         [meta.to_a.freeze, meta.serialization(serialization), klass.name].freeze
+      end
+
+      # @param value [Object] a schema, or part of one
+      # @return [Object] a copy sharing nothing mutable with +value+
+      def self.deep_copy(value)
+        case value
+        # A Hash freezes its own copy of a String key, so keys can be shared.
+        when ::Hash then value.to_h { |key, item| [key, deep_copy(item)] }
+        when ::Array then value.map { |item| deep_copy(item) }
+        when ::String then value.dup
+        else value
+        end
+      end
+
+      # @param value [Object] a schema, or part of one
+      # @return [Object] +value+, frozen all the way down
+      def self.deep_freeze(value)
+        case value
+        when ::Hash then value.each_value { |item| deep_freeze(item) }
+        when ::Array then value.each { |item| deep_freeze(item) }
+        end
+        value.freeze
       end
 
       private
