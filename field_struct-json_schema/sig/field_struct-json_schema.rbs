@@ -223,6 +223,7 @@ module FieldStruct
       LETTERS: ::Array[::Range[String]]
       NON_ASCII: Integer
       ANY: Integer
+      RETRY: ::Hash[Symbol, Object]
       ESCAPED: ::Hash[String, String]
 
       # _@param_ `source` — a Regexp source

@@ -646,7 +646,9 @@ RSpec.describe FieldStruct::JSONSchema do
       /\A(?:\d{1,3}\.){3}\d{1,3}\z/ => '^(?:\d{1,3}\.){3}\d{1,3}$',
       /\A(?:[a-z0-9-]+\.)+[a-z]{2,}\z/ => '^(?:[a-z0-9-]+\.)+[a-z]{2,}$',
       /\A"(?:[^"\\]|\\.)*"\z/ => '^"(?:[^"\\\\]|\\\\[^\n])*"$',
-      /\A\d*\d*x\z/ => '^\d*\d*x$' # two overlapping repeats: quadratic at worst
+      /\A\d*\d*x\z/ => '^\d*\d*x$', # two overlapping repeats: quadratic at worst
+      /\d+x/ => '\d+x', # unanchored, one repeat: quadratic too
+      /\A\d*(?=\d*x)\d*y\z/ => '^\d*(?=\d*x)\d*y$'
     }.each do |regexp, pattern|
       it "translates #{regexp.inspect}" do
         expect(described_class.pattern_for(regexp)).to eq(pattern)
@@ -676,7 +678,11 @@ RSpec.describe FieldStruct::JSONSchema do
      /\A(?:\d*)\d*\d*x\z/, /\A\d*(?:a|\d*)\d*x\z/, /\A(?:\d*\d*)\d*x\z/, /\A(?:ba*){2}a*a*x\z/, /\Aa*b*a*b*a*x\z/,
      /\A\s*\w*\s*\w*\s*\w*\s*\z/, /\A(?:ab)+(?:ab)+(?:ab)+x\z/,
      # A lookahead holding a variable repeat runs again on each iteration.
-     /\A(?:\d(?!\d*\d*y))+x\z/].each do |regexp|
+     /\A(?:\d(?!\d*\d*y))+x\z/,
+     # ... and a lookahead's repeats run on from the ones before it (third review).
+     /\A\d*(?=\d*\d*x)/, /\A\d*(?=\d*(?=\d*x))/, /\A\w+(?=\w*\w*\d)\z/,
+     # Without \A a validator retries at every position: one more repeat.
+     /\d*\d*x/, /\w*\d+x\z/].each do |regexp|
       it "gives up on #{regexp.inspect}" do
         expect(described_class.pattern_for(regexp)).to be_nil
       end

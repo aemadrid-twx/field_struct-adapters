@@ -76,6 +76,9 @@ module FieldStruct
       NON_ASCII = 1 << 128
       # @return [Integer]
       ANY = (1 << 129) - 1
+      # The retry at every position, as an item (see #polynomial?).
+      # @return [Hash{Symbol=>Object}]
+      RETRY = {set: ANY, min: 0, max: Float::INFINITY, alternatives: nil}.freeze
       # Single-character escapes in an emitted atom, and what they stand for
       # (+\b+ only in a class: outside one it's unsupported).
       # @return [Hash{String=>String}]
@@ -118,7 +121,9 @@ module FieldStruct
         step while @pos < @source.length
         return nil if @in_class || !@groups.empty?
 
-        @sequences.concat(@frames.pop)
+        # A validator tries the pattern at every position, as if it began with
+        # [\s\S]*: an alternative not anchored by \A has one more repeat.
+        @sequences.concat(@frames.pop.map { |items| [RETRY, *items] })
         unsupported if @sequences.any? { |items| polynomial?(items) }
         @out
       rescue Unsupported
@@ -304,14 +309,15 @@ module FieldStruct
         kind, start, repeating = @groups.pop || unsupported
         alternatives = @frames.pop
         @sequences.concat(alternatives)
-        if kind == :plain
-          @frames.last.last << item(alternatives.flatten.reduce(0) { |set, inner| set | inner[:set] }, alternatives)
-        elsif repeating
-          # A lookaround matches no characters, so it's no item, but one
-          # holding a variable repeat runs again on each iteration of a
-          # repeated group around it: #unambiguous? refuses that.
-          @frames.last.last << {set: 0, min: 0, max: 0, alternatives: nil, lookaround: true}
-        end
+        @frames.last.last << if kind == :plain
+                               item(alternatives.flatten.reduce(0) { |set, inner| set | inner[:set] }, alternatives)
+                             else
+                               # A lookaround matches no characters, but its repeats run from where
+                               # it stands (#lookaround_runs), and one holding a variable repeat
+                               # runs again on each iteration of a repeated group around it:
+                               # #unambiguous? refuses that.
+                               {set: 0, min: 0, max: 0, alternatives: nil, lookaround: repeating, body: alternatives}
+                             end
         @out << ')'
         @groups.last[2] = true if repeating && !@groups.empty?
         @quantifiable = kind == :plain
@@ -413,7 +419,10 @@ module FieldStruct
         return class_escape(char) if @in_class
 
         case char
-        when 'A' then plain_token('^')
+        when 'A'
+          plain_token('^')
+          # Matching only at the start stops the retry at every position (#polynomial?).
+          @frames.last.last << {set: 0, min: 1, max: 1, alternatives: nil} if @groups.empty?
         when 'z' then plain_token('$')
         when 'b', 'B' then unsupported # Ruby's word boundary counts é and ſ as word characters
         when 's' then atom { @out << "[#{SPACE}]" }
@@ -562,7 +571,7 @@ module FieldStruct
       def unbounded(items)
         items.reduce(0) do |chars, inner|
           chars | (inner[:max] == Float::INFINITY ? inner[:set] : 0) |
-            (inner[:alternatives] || []).reduce(0) { |all, nested| all | unbounded(nested) }
+            (inner[:alternatives] || inner[:body] || []).reduce(0) { |all, nested| all | unbounded(nested) }
         end
       end
 
@@ -582,11 +591,10 @@ module FieldStruct
       # @param char [Integer]
       # @return [Array(Integer, Integer, Integer, Boolean)] as {#runs}
       def item_runs(inner, char)
+        return lookaround_runs(inner, char) if inner[:body]
         return atom_runs(inner, char) unless inner[:alternatives]
 
-        body = inner[:alternatives].map { |items| runs(items, char) }.reduce do |one, other|
-          [[one[0], other[0]].max, [one[1], other[1]].max, [one[2], other[2]].max, one[3] || other[3]]
-        end
+        body = either(inner[:alternatives], char)
         # Three copies are enough to reach three; a bounded count stops sooner.
         result = Array.new([inner[:max], 3].min, body).reduce([0, 0, 0, true]) { |sequence, copy| chain(sequence, copy) }
         # An unbounded group that can take the character counts as one
@@ -595,6 +603,27 @@ module FieldStruct
         result = result[0..2].map { |count| [count, 1].max } + [true] if inner[:max] == Float::INFINITY && inner[:set].anybits?(char)
         result[3] ||= inner[:min].zero?
         result
+      end
+
+      # @param alternatives [Array<Array<Hash>>]
+      # @param char [Integer]
+      # @return [Array(Integer, Integer, Integer, Boolean)] as {#runs}, the
+      #   largest of each
+      def either(alternatives, char)
+        alternatives.map { |items| runs(items, char) }.reduce do |one, other|
+          [[one[0], other[0]].max, [one[1], other[1]].max, [one[2], other[2]].max, one[3] || other[3]]
+        end
+      end
+
+      # A lookaround's repeats run on from the ones before it
+      # (+\d*(?=\d*\d*x)+), but it consumes nothing, so none run on after it.
+      #
+      # @param inner [Hash] a lookaround
+      # @param char [Integer]
+      # @return [Array(Integer, Integer, Integer, Boolean)] as {#runs}
+      def lookaround_runs(inner, char)
+        start, best, = either(inner[:body], char)
+        [start, best, 0, true]
       end
 
       # @param inner [Hash] an atom
