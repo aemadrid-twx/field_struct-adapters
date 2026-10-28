@@ -19,11 +19,13 @@ module FieldStruct
       private_constant :Imprecise
 
       # @param serialization [Symbol]
-      # @param timestamp [Symbol]
+      # @param timestamp [Symbol, nil] the precision {#dump} checks times
+      #   against; {#load} takes the Times the avro gem already decoded, so
+      #   it needs none (a dump without one raises)
       # @param absent [Hash{Class<FieldStruct::Base>=>Array<String>}] the Avro
       #   field names a writer lacked, per struct class; {#load} leaves them
       #   out so field_struct applies its defaults
-      def initialize(serialization:, timestamp:, absent: {})
+      def initialize(serialization:, timestamp: nil, absent: {})
         @serialization = serialization
         @timestamp = timestamp
         @absent = absent

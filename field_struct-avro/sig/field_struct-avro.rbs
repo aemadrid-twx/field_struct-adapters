@@ -100,9 +100,10 @@ module FieldStruct
       end
     end
 
-    # Keeps what {FieldStruct::Avro.encode} and {FieldStruct::Avro.decode}
-    # would otherwise rebuild on every call: the parsed reader schema of a
-    # class, and a writer schema parsed and checked against it.
+    # Keeps what {FieldStruct::Avro} would otherwise rebuild on every call:
+    # the parsed reader schema of a class and a writer schema parsed and
+    # checked against it (for +encode+ and +decode+), and a class's field
+    # list (for {Datum}, so +to_datum+ and +from_datum+ too).
     # 
     # An entry remembers, for every struct class it covers, the class's Field
     # objects (in order), its serialization mapping and its name, and a hit
@@ -197,10 +198,10 @@ module FieldStruct
 
       # _@param_ `serialization`
       # 
-      # _@param_ `timestamp`
+      # _@param_ `timestamp` — the precision {#dump} checks times against; {#load} takes the Times the avro gem already decoded, so it needs none (a dump without one raises)
       # 
       # _@param_ `absent` — the Avro field names a writer lacked, per struct class; {#load} leaves them out so field_struct applies its defaults
-      def initialize: (serialization: Symbol, timestamp: Symbol, ?absent: ::Hash[singleton(FieldStruct::Base), ::Array[String]]) -> void
+      def initialize: (serialization: Symbol, ?timestamp: Symbol?, ?absent: ::Hash[singleton(FieldStruct::Base), ::Array[String]]) -> void
 
       # _@param_ `struct`
       def dump: (FieldStruct::Base struct) -> ::Hash[String, Object]

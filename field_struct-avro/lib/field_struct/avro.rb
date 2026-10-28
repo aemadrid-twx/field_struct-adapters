@@ -67,8 +67,8 @@ module FieldStruct
     # @param serialization [Symbol]
     # @return [FieldStruct::Base]
     def self.from_datum(klass, datum, serialization: :avro)
-      check(klass, :micros)
-      Datum.new(serialization:, timestamp: :micros).load(klass, datum)
+      check(klass)
+      Datum.new(serialization:).load(klass, datum)
     end
 
     # @param struct [FieldStruct::Base]
@@ -100,14 +100,14 @@ module FieldStruct
       # the Avro default can't always express (a date, a decimal, a proc).
       writer, skip = writer_schema ? CACHE.writer(writer_schema, entry) : [reader, {}]
       datum = ::Avro::IO::DatumReader.new(writer, reader).read(::Avro::IO::BinaryDecoder.new(StringIO.new(bytes)))
-      Datum.new(serialization:, timestamp:, absent: skip).load(klass, datum)
+      Datum.new(serialization:, absent: skip).load(klass, datum)
     end
 
     # @param klass [Object]
     # @param timestamp [Object]
     # @return [void]
     # @raise [ArgumentError]
-    def self.check(klass, timestamp)
+    def self.check(klass, timestamp = :micros)
       unless klass.is_a?(::Class) && klass < FieldStruct::Base
         raise ArgumentError, "FieldStruct::Avro expects a FieldStruct::Base subclass, got #{klass.inspect}"
       end
