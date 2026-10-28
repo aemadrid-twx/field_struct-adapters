@@ -314,7 +314,8 @@ module FieldStruct
       # @return [Hash{String=>Object}]
       def property_schema(property, klass)
         field = property.field
-        @fields.push("#{klass.name || klass.inspect}##{field.name}")
+        # A field of an anonymous struct chains from the field holding it.
+        @fields.push(Introspection.named?(klass) || @fields.empty? ? "#{klass.name || klass.inspect}##{field.name}" : "#{@fields.last}.#{field.name}")
         option = field.options[:json_schema]
         schema = override(option) { "the json_schema: option of #{@fields.last}" } || node_schema(property.node)
         annotations(field).merge(field.required? ? schema : optional(schema, field.type_instance))

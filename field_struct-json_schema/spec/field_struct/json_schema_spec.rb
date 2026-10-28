@@ -379,6 +379,18 @@ RSpec.describe FieldStruct::JSONSchema do
         }
       end
 
+      it 'chains the field through an anonymous struct, as Holder#inner.x' do
+        stub_const('Exploding', Class.new(FieldStruct::Types::Base) do
+          def coerce(value, **) = value
+          def ruby_type = String
+          def json_schema = raise('boom')
+        end)
+        inner = Class.new(FieldStruct::Base) { required :x, Exploding }
+        klass = struct('Holder') { required :inner, inner }
+
+        expect { described_class.generate(klass) }.to raise_error(ArgumentError, /raised RuntimeError \(for Holder#inner\.x\): boom/)
+      end
+
       it 'never builds the element of an array whose json_schema: replaces it' do
         # Types::Nested can't be built without a struct class: reading the
         # element would raise, so this passes only if the override wins first.
