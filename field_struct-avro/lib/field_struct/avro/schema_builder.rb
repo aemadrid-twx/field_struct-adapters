@@ -258,7 +258,7 @@ module FieldStruct
         when FieldStruct::Types::Boolean then 'boolean'
         when FieldStruct::Types::Integer then 'long'
         when FieldStruct::Types::Float then 'double'
-        when FieldStruct::Types::BigDecimal then decimal_type(type, options, avro)
+        when FieldStruct::Types::BigDecimal then decimal_type(type, options, avro, name)
         when FieldStruct::Types::Date then {'type' => 'int', 'logicalType' => 'date'}
         when FieldStruct::Types::Time, FieldStruct::Types::DateTime then {'type' => 'long', 'logicalType' => "timestamp-#{timestamp(avro)}"}
         when FieldStruct::Types::Symbol then enum_type(options, avro, name, namespace) || 'string'
@@ -283,12 +283,28 @@ module FieldStruct
       # @param type [FieldStruct::Types::BigDecimal]
       # @param options [Hash{Symbol=>Object}]
       # @param avro [Hash{Symbol=>Object}]
+      # @param name [String]
       # @return [String, Hash{String=>Object}]
-      def decimal_type(type, options, avro)
+      # @raise [ArgumentError] when the scale doesn't fit the precision
+      def decimal_type(type, options, avro, name)
         scale = avro.fetch(:scale) { options.fetch(:round) { type.class.default_round } }
         return 'string' if scale.nil?
 
-        {'type' => 'bytes', 'logicalType' => 'decimal', 'precision' => avro.fetch(:precision, DEFAULT_PRECISION), 'scale' => scale}
+        precision = avro.fetch(:precision, DEFAULT_PRECISION)
+        unless [scale, precision].all?(::Integer)
+          raise ArgumentError, "FieldStruct::Avro can't describe #{name}: decimal precision and scale must be integers, " \
+                               "got #{precision.inspect} and #{scale.inspect}"
+        end
+
+        # A negative round: (to tens, hundreds) leaves no fractional digits.
+        scale = [scale, 0].max
+        raise ArgumentError, "FieldStruct::Avro can't describe #{name}: precision #{precision} must be at least 1" if precision < 1
+        if scale > precision
+          raise ArgumentError, "FieldStruct::Avro can't describe #{name}: scale #{scale} is more than precision #{precision}; " \
+                               'raise avro: {precision:}'
+        end
+
+        {'type' => 'bytes', 'logicalType' => 'decimal', 'precision' => precision, 'scale' => scale}
       end
 
       # @param options [Hash{Symbol=>Object}]

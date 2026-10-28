@@ -165,6 +165,23 @@ RSpec.describe FieldStruct::Avro, '.schema' do
     expect { described_class.schema(bytes) }.to raise_error(ArgumentError, /both become Avro string/)
   end
 
+  it 'only emits decimals the avro gem accepts' do
+    tens = struct('Tens') { required :n, :big_decimal, round: -1 }
+    wide = struct('Wide') { required :n, :big_decimal, round: 40 }
+    narrow = struct('Narrow') { required :n, :big_decimal, round: 2, avro: {precision: 0} }
+
+    # round: -1 leaves no fractional digits, which scale 0 holds exactly.
+    expect(field_type(tens, :n)).to include('scale' => 0)
+    expect(FieldStruct::Avro.decode(tens, FieldStruct::Avro.encode(tens.new(n: '123')))).to eq(tens.new(n: '123'))
+    expect { described_class.schema(wide) }.to raise_error(ArgumentError, /Wide_n: scale 40 is more than precision 38/)
+    expect { described_class.schema(narrow) }.to raise_error(ArgumentError, /Narrow_n: precision 0 must be at least 1/)
+    # Scale may equal precision: every digit is fractional.
+    expect(field_type(struct('Edge') { required :n, :big_decimal, avro: {precision: 2, scale: 2} }, :n))
+      .to include('precision' => 2, 'scale' => 2)
+    expect { described_class.schema(struct('Text') { required :n, :big_decimal, round: 2, avro: {precision: '12'} }) }
+      .to raise_error(ArgumentError, /Text_n: decimal precision and scale must be integers, got "12" and 2/)
+  end
+
   it 'writes a float default as a double, even when given as an integer' do
     klass = struct('Ratio') do
       optional :ratio, :float, default: 1
