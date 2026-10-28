@@ -1,25 +1,13 @@
 # frozen_string_literal: true
 
-# Optional OpenTelemetry adapter. Load it explicitly with
-# `require 'actionable/otel'`; the core entry point never loads it, so nothing
-# touches OpenTelemetry unless you opt in. `opentelemetry-api` is a soft
-# dependency: actionable-rb does not depend on it, so add it to your own
-# Gemfile (plus `opentelemetry-sdk` and an exporter to send the spans
-# anywhere).
-require_relative '../actionable' # ensure the core is loaded (self-contained entry)
-
-begin
-  require 'opentelemetry'
-rescue LoadError => e
-  # Only a missing opentelemetry-api means "add the gem"; a LoadError from
-  # inside it is OpenTelemetry's own problem, re-raised untouched.
-  raise unless e.path.nil? || e.path == 'opentelemetry'
-
-  raise LoadError,
-    'actionable/otel needs the opentelemetry-api gem, which actionable-rb does not depend on: add ' \
-    "`gem 'opentelemetry-api'` to your Gemfile (and opentelemetry-sdk with an exporter to send the spans " \
-    "anywhere), then require 'actionable/otel' again. (#{e.message})"
-end
+# OpenTelemetry adapter for actionable. Load it explicitly with
+# `require 'actionable/otel'`; requiring it is what wires the spans in, so
+# nothing touches OpenTelemetry until you opt in. This gem depends on
+# opentelemetry-api only: add opentelemetry-sdk and an exporter to your own
+# Gemfile to send the spans anywhere.
+require 'actionable'
+require 'opentelemetry'
+require_relative 'otel/version'
 
 module Actionable
   # Traces every action run as an OpenTelemetry span, with a child span per
@@ -152,7 +140,7 @@ module Actionable
         return @tracer if @tracer && @tracer_provider.equal?(provider)
 
         @tracer_provider = provider
-        @tracer = provider.tracer(name: TRACER_NAME, version: Actionable::VERSION)
+        @tracer = provider.tracer(name: TRACER_NAME, version: VERSION)
       end
 
       # @param span [Object] the +OpenTelemetry::Trace::Span+

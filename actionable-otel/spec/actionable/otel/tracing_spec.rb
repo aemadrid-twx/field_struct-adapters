@@ -1,32 +1,7 @@
 # frozen_string_literal: true
 
-otel_loaded =
-  begin
-    require 'opentelemetry/sdk'
-    true
-  rescue LoadError
-    false
-  end
-
-if otel_loaded
-  require 'logger'
-  require 'actionable/otel'
-  require 'actionable/rspec'
-
-  # One process-wide SDK with an in-memory exporter; each example resets it.
-  ENV['OTEL_TRACES_EXPORTER'] = 'none'
-  OTEL_SPEC_EXPORTER = OpenTelemetry::SDK::Trace::Export::InMemorySpanExporter.new
-  OpenTelemetry::SDK.configure do |config|
-    config.logger = Logger.new(IO::NULL)
-    config.add_span_processor(OpenTelemetry::SDK::Trace::Export::SimpleSpanProcessor.new(OTEL_SPEC_EXPORTER))
-  end
-end
-
-# The OpenTelemetry adapter against the real SDK. Runs with
-# gemfiles/otel.gemfile (the `otel` CI lane); skipped in the default suite,
-# which instead checks the missing-gem error (missing_gem_spec.rb).
-RSpec.describe 'Actionable::Otel',
-  skip: (otel_loaded ? false : 'opentelemetry not installed (BUNDLE_GEMFILE=gemfiles/otel.gemfile)') do
+# The OpenTelemetry adapter against the real SDK (configured in spec_helper).
+RSpec.describe Actionable::Otel do
   before { OTEL_SPEC_EXPORTER.reset }
 
   after do
@@ -63,11 +38,11 @@ RSpec.describe 'Actionable::Otel',
       expect(error?(span)).to be(false)
     end
 
-    it "comes from the 'actionable' tracer at the gem's version" do
+    it "comes from the 'actionable' tracer at this gem's version" do
       Charge.run
 
       scope = span_named('Charge.run').instrumentation_scope
-      expect([scope.name, scope.version]).to eq(['actionable', Actionable::VERSION])
+      expect([scope.name, scope.version]).to eq(['actionable', Actionable::Otel::VERSION])
     end
 
     it 'emits a span per item of run_each' do
