@@ -187,7 +187,8 @@ module FieldStruct
 
       # @param klass [Class<FieldStruct::Base>]
       # @param serialization [Symbol]
-      # @return [Hash{String=>Object}] frozen; callers copy it
+      # @return [Hash{String=>Object}] frozen when cached, so callers copy
+      #   it; a schema that asked a type's +json_schema+ comes back as built
       def schema(klass, serialization)
         key = [klass, serialization]
         entry = @entries[key]
@@ -216,6 +217,9 @@ module FieldStruct
 
       private
 
+      # Only on a miss, so {JSONSchema.deep_copy}, which every
+      # {JSONSchema.generate} runs, stays a plain copy.
+      #
       # @param value [Object]
       # @return [Object] +value+, frozen all the way down
       def deep_freeze(value)
@@ -242,6 +246,9 @@ module FieldStruct
       end
     end
 
+    # The process-wide cache {.generate} reads.
+    #
+    # @api private
     # @return [Cache]
     CACHE = Cache.new
 
@@ -412,7 +419,6 @@ module FieldStruct
         return {'$ref' => '#'} if klass.equal?(@root)
         return inline(klass) unless Introspection.named?(klass)
 
-        @stamps[klass] ||= Cache.stamp(klass, @serialization)
         unless @defs.key?(klass.name)
           @defs[klass.name] = {} # reserve the slot so a cycle refers back to it
           @defs[klass.name] = {'title' => klass.name}.merge(object_schema(klass))
@@ -581,7 +587,7 @@ module FieldStruct
 
       # Class methods added by {Methods}.
       module ClassMethods
-        # @param serialization [Symbol] see {FieldStruct::JSONSchema.generate}
+        # @param serialization [Symbol, String] see {FieldStruct::JSONSchema.generate}
         # @return [Hash{String=>Object}]
         def to_json_schema(serialization: :json) = FieldStruct::JSONSchema.generate(self, serialization: serialization)
       end

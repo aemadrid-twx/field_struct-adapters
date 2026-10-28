@@ -29,7 +29,11 @@ RSpec.describe FieldStruct::JSONSchema::Cache do
     expect(second['required']).to eq(%w[id part])
     expect(second).not_to be_frozen
     expect(second['properties']['id']['type']).not_to be_frozen
-    expect(FieldStruct::JSONSchema::CACHE.schema(box, :json)).to be(FieldStruct::JSONSchema::CACHE.schema(box, :json))
+    cached = FieldStruct::JSONSchema::CACHE.schema(box, :json)
+    expect(cached).to be(FieldStruct::JSONSchema::CACHE.schema(box, :json))
+    # Shared between callers, so frozen all the way down.
+    expect([cached, cached['properties'], cached['properties']['id'], cached['properties']['id']['type'], cached['required']])
+      .to all(be_frozen)
   end
 
   it 'picks up fields added or re-declared later, in the class or a nested one, and a later serialize' do

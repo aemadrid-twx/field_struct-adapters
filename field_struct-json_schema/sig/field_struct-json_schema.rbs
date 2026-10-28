@@ -107,7 +107,8 @@ module FieldStruct
       # 
       # _@param_ `serialization`
       # 
-      # _@return_ — frozen; callers copy it
+      # _@return_ — frozen when cached, so callers copy
+      # it; a schema that asked a type's +json_schema+ comes back as built
       def schema: (singleton(FieldStruct::Base) klass, Symbol serialization) -> ::Hash[String, Object]
 
       # _@param_ `klass`
@@ -165,7 +166,7 @@ module FieldStruct
       # Class methods added by {Methods}.
       module ClassMethods
         # _@param_ `serialization` — see {FieldStruct::JSONSchema.generate}
-        def to_json_schema: (?serialization: Symbol) -> ::Hash[String, Object]
+        def to_json_schema: (?serialization: (Symbol | String)) -> ::Hash[String, Object]
       end
     end
 
