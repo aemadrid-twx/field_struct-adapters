@@ -382,7 +382,7 @@ module FieldStruct
       end
 
       # Oj's error quotes the text, which can hold anything; the message
-      # names the field instead, and the text stays on the +cause+.
+      # names the field instead, and Oj's error isn't kept as the cause.
       #
       # @param value [String]
       # @return [Object]
