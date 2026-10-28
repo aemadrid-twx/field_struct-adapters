@@ -544,6 +544,16 @@ RSpec.describe FieldStruct::Avro, 'encode and decode' do
     expect(described_class.decode(plain_after, described_class.encode(plain_before.new(v: 'x')), writer_schema: writer).v).to eq('x')
   end
 
+  it 'reads avro: {type: nil} as no override, in the datum as in the schema' do
+    klass = struct('NoOverride') do
+      required :v, :value, avro: {type: nil}
+      required :d, :big_decimal, avro: {type: nil}
+    end
+    instance = klass.new(v: {'a' => 1}, d: '1.5')
+
+    expect(described_class.decode(klass, described_class.encode(instance))).to eq(instance)
+  end
+
   it 'round-trips many generated values' do
     klass = struct('Sample') do
       required :i, :integer

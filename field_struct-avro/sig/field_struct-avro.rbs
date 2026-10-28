@@ -256,6 +256,11 @@ module FieldStruct
       # _@param_ `avro`
       def self.nested: (::Hash[Symbol, Object] avro) -> ::Hash[Symbol, Object]
 
+      # +type: nil+ is no override, so the schema and the datum agree on it.
+      # 
+      # _@param_ `avro`
+      def self.override?: (::Hash[Symbol, Object] avro) -> bool
+
       # _@param_ `avro`
       # 
       # _@return_ — the

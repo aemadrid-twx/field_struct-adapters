@@ -269,7 +269,7 @@ module FieldStruct
       def struct_keys(klass, required_only: false)
         properties = Introspection.properties(klass, serialization: @serialization)
         if required_only
-          properties = properties.select { |property| property.field.required? && !Options.field(property).key?(:type) }
+          properties = properties.select { |property| property.field.required? && !Options.override?(Options.field(property)) }
         end
         properties.map(&:key)
       end

@@ -30,11 +30,19 @@ module FieldStruct
         avro.key?(:type) ? avro.except(:type) : avro
       end
 
+      # +type: nil+ is no override, so the schema and the datum agree on it.
+      #
+      # @param avro [Hash{Symbol=>Object}]
+      # @return [Boolean]
+      def override?(avro)
+        !avro[:type].nil?
+      end
+
       # @param avro [Hash{Symbol=>Object}]
       # @return [String, Hash{String=>Object}, Array<Object>, nil] the
       #   +type:+ as Avro JSON (symbols as strings), or +nil+ without one
       def type(avro)
-        json(avro[:type]) if avro.key?(:type)
+        json(avro[:type]) if override?(avro)
       end
 
       # @param value [Object]
