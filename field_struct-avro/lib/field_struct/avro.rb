@@ -79,6 +79,7 @@ module FieldStruct
     # @param serialization [Symbol]
     # @param timestamp [Symbol]
     # @return [String] the Avro binary encoding, without a container or header
+    # @raise [ArgumentError] as {.schema} does, and when a time is too precise
     def self.encode(struct, serialization: :avro, timestamp: :micros)
       check(struct.class, timestamp)
       parsed = CACHE.reader(struct.class, serialization, timestamp).parsed
@@ -94,8 +95,8 @@ module FieldStruct
     # @param serialization [Symbol]
     # @param timestamp [Symbol]
     # @return [FieldStruct::Base]
-    # @raise [ArgumentError] when the avro gem would read a field as the wrong
-    #   value (see {Resolution})
+    # @raise [ArgumentError] as {.schema} does, and when the avro gem would
+    #   read a field as the wrong value (see {Resolution})
     def self.decode(klass, bytes, writer_schema: nil, serialization: :avro, timestamp: :micros)
       check(klass, timestamp)
       entry = CACHE.reader(klass, serialization, timestamp)

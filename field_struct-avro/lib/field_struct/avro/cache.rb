@@ -72,6 +72,7 @@ module FieldStruct
       # @param serialization [Symbol]
       # @param timestamp [Symbol]
       # @return [FieldStruct::Avro::Cache::Reader]
+      # @raise [ArgumentError] when the schema doesn't parse
       def reader(klass, serialization, timestamp)
         key = [klass, serialization, timestamp]
         entry = @readers[key]
@@ -97,7 +98,7 @@ module FieldStruct
         ::Avro::Schema.parse(JSON.generate(schema))
       rescue ::Avro::SchemaParseError => e
         raise ArgumentError, "FieldStruct::Avro: #{klass.name || klass.inspect} doesn't make a valid Avro schema " \
-                             "(check its fields' avro: options): #{e.message}"
+                             "(check the avro: options of its fields and nested structs): #{e.message}"
       end
       private :parse
 
