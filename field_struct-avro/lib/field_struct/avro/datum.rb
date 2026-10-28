@@ -226,7 +226,7 @@ module FieldStruct
       # @param avro [Hash{Symbol=>Object}]
       # @return [Boolean]
       def override?(node, avro)
-        return false unless avro.key?(:type)
+        return false if avro[:type].nil? # as Options.override?, inline on the hot path
 
         # A :value overridden to (nullable) string still holds JSON text.
         !(value_node?(node) && Options.string?(Options.type(avro)))

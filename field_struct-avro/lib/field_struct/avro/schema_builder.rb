@@ -191,7 +191,7 @@ module FieldStruct
       # @return [String, Hash{String=>Object}, Array<Object>]
       def type_for(node, avro, name, namespace)
         override = Options.type(avro)
-        return override if override
+        return override unless override.nil?
 
         case node
         when Introspection::ArrayNode then array_type(node, avro, name, namespace)
@@ -269,7 +269,7 @@ module FieldStruct
       def struct_keys(klass, required_only: false)
         properties = Introspection.properties(klass, serialization: @serialization)
         if required_only
-          properties = properties.select { |property| property.field.required? && !Options.field(property).key?(:type) }
+          properties = properties.select { |property| property.field.required? && !Options.override?(Options.field(property)) }
         end
         properties.map(&:key)
       end
