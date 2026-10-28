@@ -137,8 +137,8 @@ module FieldStruct
                              "put #{klass} in a module"
       end
 
-      # The field being described, with the Avro name when it says more (a
-      # union member's +_0+), so a log line can be traced to the declaration.
+      # The field being described, then its Avro name (which tells union
+      # members apart, +_0+), so a log line can be traced to the declaration.
       #
       # @param avro_name [String]
       # @return [String] like +Billing::Wide#grand_total (Avro Wide_grandTotal)+
@@ -161,7 +161,7 @@ module FieldStruct
       # @return [Hash{String=>Object}]
       def field_schema(property, record_name, namespace)
         field = property.field
-        check_name(property.key, "field #{field.name.inspect}")
+        check_name(property.key, "field #{@fields.last}")
         type = type_for(property.node, Options.field(property), "#{record_name}_#{property.key}", namespace)
         out = {'name' => property.key}
         out['doc'] = field.description if field.description
