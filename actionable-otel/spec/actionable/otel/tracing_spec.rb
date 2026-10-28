@@ -112,9 +112,20 @@ RSpec.describe Actionable::Otel do
       expect([error?(run_span), error?(step_span)]).to eq([true, true])
       expect(run_span.events.map { |event| [event.name, event.attributes] })
         .to eq([['exception', {'exception.type' => 'ArgumentError'}]])
-      expect(step_span.events).to be_nil
+      expect(step_span.events.to_a).to be_empty
       expect(run_span.attributes).not_to have_key('actionable.outcome')
       expect(spans.inspect).not_to include('4111')
+    end
+
+    it 'names an anonymous exception class by type only, as :full does' do
+      failure = Class.new(StandardError)
+      stub_const('Boom', Class.new(Actionable::Action) do
+        step :go
+        define_method(:go) { raise failure }
+      end)
+
+      expect { Boom.run }.to raise_error(failure)
+      expect(span_named('Boom.run').events.first.attributes).to eq('exception.type' => failure.to_s)
     end
 
     it 'records the message and backtrace too under exception_details = :full' do
@@ -130,7 +141,7 @@ RSpec.describe Actionable::Otel do
       event = events.first
       expect(event.attributes).to include('exception.type' => 'ArgumentError', 'exception.message' => 'bad',
         'exception.stacktrace' => a_string_including('tracing_spec.rb'))
-      expect(span_named('Boom/go').events).to be_nil
+      expect(span_named('Boom/go').events.to_a).to be_empty
     end
 
     it 'refuses an unknown exception_details level' do

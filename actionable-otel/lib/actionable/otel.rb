@@ -59,7 +59,8 @@ module Actionable
       # @raise [ArgumentError] for any other value
       def exception_details=(level)
         unless EXCEPTION_DETAILS.include?(level)
-          raise ArgumentError, "Actionable::Otel.exception_details must be :type_only or :full, got #{level.inspect}"
+          raise ArgumentError, "Actionable::Otel.exception_details must be #{EXCEPTION_DETAILS.map(&:inspect).join(" or ")}, " \
+                               "got #{level.inspect}"
         end
 
         @exception_details = level
@@ -73,8 +74,9 @@ module Actionable
       #
       #   Actionable::Otel.step_spans = false
       #
-      # @param enabled [Boolean] +false+ to emit run spans only
-      # @return [Boolean] whether step spans are now on
+      # @param enabled [Boolean, nil] +false+ (or +nil+) to emit run spans only
+      # @return [Boolean, nil] +enabled+, as Ruby returns from any setter;
+      #   {.step_spans?} reads the setting back
       def step_spans=(enabled)
         @step_spans = enabled ? true : false
       end
@@ -154,7 +156,8 @@ module Actionable
         if exception_details == :full
           span.record_exception(error)
         else
-          span.add_event('exception', attributes: {'exception.type' => error.class.name})
+          # to_s, as record_exception does: an anonymous class has no name.
+          span.add_event('exception', attributes: {'exception.type' => error.class.to_s})
         end
       end
 
