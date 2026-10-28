@@ -129,7 +129,11 @@ module FieldStruct
           atom { open_class }
         when '(' then group
         when ')' then close_group
-        when '|' then plain_token('|')
+        when '|'
+          # Alternatives can match the same text ((a|aa)), so a group holding
+          # one counts as a variable repeat: see #repeats.
+          @groups.last[2] = true unless @groups.empty?
+          plain_token('|')
         when '.' then atom { @out << '[^\n]' }
         when '^' then plain_token(LINE_START)
         when '$' then plain_token(LINE_END)
@@ -180,8 +184,8 @@ module FieldStruct
       # Ruby's memoization hides it, but a JavaScript validator would hang
       # on a crafted input. So those get no pattern. An exact count over a
       # plain atom (+(\d{3}-){2}+) splits only one way, so it doesn't mark
-      # its group. (One over an alternation, +(a|aa){2}+, can split many
-      # ways; overlapping alternation isn't caught yet.)
+      # its group. A group holding an alternation counts as varying too, since
+      # +(a|aa)+ can split one input many ways.
       #
       # @param more_than_once [Boolean] whether it can repeat the atom
       # @param variable [Boolean] whether the count varies (+?+, +*+, +++,

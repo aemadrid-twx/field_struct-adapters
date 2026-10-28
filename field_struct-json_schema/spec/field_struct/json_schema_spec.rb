@@ -622,7 +622,11 @@ RSpec.describe FieldStruct::JSONSchema do
       /\A\d{1,3}(,\d{3})*\z/ => '^\d{1,3}(,\d{3})*$',
       /\A(?:\d{3}-){2}\d{4}\z/ => '^(?:\d{3}-){2}\d{4}$',
       /\A(\d+\.)?\d+\z/ => '^(\d+\.)?\d+$',
-      /\A(ab)+\z/ => '^(ab)+$'
+      /\A(ab)+\z/ => '^(ab)+$',
+      # Alternation is fine outside a repeated group.
+      /\Aa+|b+\z/ => '^a+|b+$',
+      /\A(?:jpg|png)\z/ => '^(?:jpg|png)$',
+      /\A(?:a|b)?\z/ => '^(?:a|b)?$'
     }.each do |regexp, pattern|
       it "translates #{regexp.inspect}" do
         expect(described_class.pattern_for(regexp)).to eq(pattern)
@@ -640,7 +644,10 @@ RSpec.describe FieldStruct::JSONSchema do
      /\bfoo\b/, /\As{2}\z/i, Regexp.new(['\A[s', ']s\z'].join, Regexp::IGNORECASE), Regexp.new(['\A[s-', 's]{2}\z'].join, Regexp::IGNORECASE), Regexp.new(['\A[f', ']i\z'].join, Regexp::IGNORECASE), Regexp.new("\\A[\u00A1-\u00BF]\\z", Regexp::IGNORECASE),
      Regexp.new("\\Ai\u0307\\z", Regexp::IGNORECASE), Regexp.new(['\A[\W', ']\z'].join, Regexp::IGNORECASE),
      # A group holding a variable repeat, repeated: exponential in JavaScript (security review).
-     /\A(a+)+\z/, /\A(x+x+)+y\z/, /\A([^\n]*a){20}\z/, /\A(\w+\s?)+\z/, /\A((a+)b)+\z/, /\A(a?){20}\z/, /\A(a{2,3})+\z/].each do |regexp|
+     /\A(a+)+\z/, /\A(x+x+)+y\z/, /\A([^\n]*a){20}\z/, /\A(\w+\s?)+\z/, /\A((a+)b)+\z/, /\A(a?){20}\z/, /\A(a{2,3})+\z/,
+     # Alternatives that can match the same text, repeated: just as exponential.
+     /\A(?:a|a)+\z/, /\A(?:\w|\d)+\z/, /\A(?:a|aa)+\z/, /\A(?:a|b|ab)*\z/, /\A(?:ab|abab)+\z/, /\A(?:s|S)+\z/i,
+     /\A(?:(?:a|aa){2}b)+\z/].each do |regexp|
       it "gives up on #{regexp.inspect}" do
         expect(described_class.pattern_for(regexp)).to be_nil
       end
