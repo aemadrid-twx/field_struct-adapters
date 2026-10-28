@@ -36,6 +36,7 @@ schema['properties']['age']       # => {"type" => ["integer", "null"], "minimum"
 schema['properties']['plan']['default']             # => "free"
 schema['properties']['pets']['items']['anyOf'].first.keys  # => ["$ref"]
 schema['$defs'].values.first['properties']['born']  # => {"type" => ["string", "null"], "format" => "date"}
+Owner.to_json_schema == schema    # => true
 ```
 
 It returns a Hash with String keys, a fresh copy each time: add enum values or descriptions for an LLM tool without touching the class, then `Oj.dump` or `JSON.generate` it. The built schema is kept per class and copied, so calling `generate` per request is cheap. It's rebuilt when a field, a `serialize` mapping, `unknown_attributes` or a class name changes, and it's never kept when a custom type's own `json_schema` method was asked, since that method may answer differently next time. A field's options changed in place (an `enum:` Array, a `json_schema:` Hash), or a `json_schema` method added to a type later, aren't noticed: declare the field again instead.
@@ -74,6 +75,26 @@ class Money < FieldStruct::Types::Base
   def ruby_type = Rational
   def json_schema = {'type' => 'string', 'pattern' => '^[0-9]+/[0-9]+$'}
 end
+
+class Ratio < FieldStruct::Types::Base # no json_schema method
+  def coerce(value, **) = value.to_r
+  def ruby_type = Rational
+end
+
+class Quote < FieldStruct::Base
+  required :price,  Money
+  optional :margin, Money
+  required :share,  Ratio
+  required :sku,    :string, json_schema: {'type' => 'string', 'minLength' => 8}
+  optional :legacy, :value, json_schema: false
+end
+
+properties = FieldStruct::JSONSchema.generate(Quote)['properties']
+properties['price']  # => {"type" => "string", "pattern" => "^[0-9]+/[0-9]+$"}
+properties['margin'] # => {"type" => ["string", "null"], "pattern" => "^[0-9]+/[0-9]+$"}
+properties['share']  # => {"x-ruby-type" => "Rational"}
+properties['sku']    # => {"type" => "string", "minLength" => 8}
+properties['legacy'] # => {"anyOf" => [{"not" => {}}, {"type" => "null"}]}
 ```
 
 ## Limits
