@@ -198,10 +198,10 @@ module FieldStruct
 
       # _@param_ `serialization`
       # 
-      # _@param_ `timestamp` — the precision {#dump} writes ({#load} reads whatever the bytes hold)
+      # _@param_ `timestamp` — the precision {#dump} checks times against; {#load} takes the Times the avro gem already decoded, so it needs none (a dump without one raises)
       # 
       # _@param_ `absent` — the Avro field names a writer lacked, per struct class; {#load} leaves them out so field_struct applies its defaults
-      def initialize: (serialization: Symbol, ?timestamp: Symbol, ?absent: ::Hash[singleton(FieldStruct::Base), ::Array[String]]) -> void
+      def initialize: (serialization: Symbol, ?timestamp: Symbol?, ?absent: ::Hash[singleton(FieldStruct::Base), ::Array[String]]) -> void
 
       # _@param_ `struct`
       def dump: (FieldStruct::Base struct) -> ::Hash[String, Object]
