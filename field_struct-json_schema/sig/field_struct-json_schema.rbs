@@ -221,6 +221,12 @@ module FieldStruct
       EXTRA_FOLDS: ::Hash[String, String]
       MULTI_FOLD: Regexp
       LETTERS: ::Array[::Range[String]]
+      NON_ASCII: Integer
+      ANY: Integer
+      RETRY: ::Hash[Symbol, Object]
+      PATHS: Integer
+      ZERO_WIDTH: ::Hash[Symbol, Object]
+      ESCAPED: ::Hash[String, String]
 
       # _@param_ `source` — a Regexp source
       # 

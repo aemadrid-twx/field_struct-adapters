@@ -637,7 +637,28 @@ RSpec.describe FieldStruct::JSONSchema do
       # Alternation is fine outside a repeated group.
       /\Aa+|b+\z/ => '^a+|b+$',
       /\A(?:jpg|png)\z/ => '^(?:jpg|png)$',
-      /\A(?:a|b)?\z/ => '^(?:a|b)?$'
+      /\A(?:a|b)?\z/ => '^(?:a|b)?$',
+      # A repeated group is fine too when it can split an input only one way:
+      # its alternatives start differently, and each variable repeat stops at
+      # a character that can't continue it.
+      /\A(?:a|b){2}\z/ => '^(?:a|b){2}$',
+      /\A[a-z0-9]+(?:-[a-z0-9]+)*\z/ => '^[a-z0-9]+(?:-[a-z0-9]+)*$',
+      /\A(?:\d{1,3}\.){3}\d{1,3}\z/ => '^(?:\d{1,3}\.){3}\d{1,3}$',
+      /\A(?:[a-z0-9-]+\.)+[a-z]{2,}\z/ => '^(?:[a-z0-9-]+\.)+[a-z]{2,}$',
+      /\A"(?:[^"\\]|\\.)*"\z/ => '^"(?:[^"\\\\]|\\\\[^\n])*"$',
+      /\A\d*\d*x\z/ => '^\d*\d*x$', # two overlapping repeats: quadratic at worst
+      /\d+x/ => '\d+x', # unanchored, one repeat: quadratic too
+      /\A\d*(?=\d*x)\d*y\z/ => '^\d*(?=\d*x)\d*y$',
+      # One pair each: the optional group only adds a way around it, and pairs
+      # that overlap without one following the other don't chain (fourth review).
+      /\A\d*(?:x\d*)?\d*y\z/ => '^\d*(?:x\d*)?\d*y$',
+      /\Aa*b*a*b*x\z/ => '^a*b*a*b*x$',
+      /\A\d?\d?x\z/ => '^\d?\d?x$',
+      # A whole group pairs with one neighbour only (fifth review).
+      /\Aa*(?:ab?)+\z/ => '^a*(?:ab?)+$',
+      /\A(?:a)+(?:ab|b)+y\z/ => '^(?:a)+(?:ab|b)+y$',
+      # An empty iteration of an optional group moves nothing between its neighbours (sixth review).
+      /\Aa*(?:b|)?a*y\z/ => '^a*(?:b|)?a*y$'
     }.each do |regexp, pattern|
       it "translates #{regexp.inspect}" do
         expect(described_class.pattern_for(regexp)).to eq(pattern)
@@ -658,7 +679,29 @@ RSpec.describe FieldStruct::JSONSchema do
      /\A(a+)+\z/, /\A(x+x+)+y\z/, /\A([^\n]*a){20}\z/, /\A(\w+\s?)+\z/, /\A((a+)b)+\z/, /\A(a?){20}\z/, /\A(a{2,3})+\z/,
      # Alternatives that can match the same text, repeated: just as exponential.
      /\A(?:a|a)+\z/, /\A(?:\w|\d)+\z/, /\A(?:a|aa)+\z/, /\A(?:a|b|ab)*\z/, /\A(?:ab|abab)+\z/, /\A(?:s|S)+\z/i,
-     /\A(?:(?:a|aa){2}b)+\z/, /\A(?:a|aa){20}\z/, /\A(?:a|b){2}\z/].each do |regexp|
+     /\A(?:(?:a|aa){2}b)+\z/, /\A(?:a|aa){20}\z/,
+     # A variable repeat that can run into what follows it, or the next iteration.
+     /\A(?:a?a)+\z/, /\A(?:\d+\.?)+\z/, /\A(?:a+b|a)+\z/, /\A(?:[a-z]+\d*)+\z/i,
+     # Three or more overlapping unbounded repeats in a row: polynomial (2.4 s at 120 characters).
+     /\A\d*\d*\d*x\z/, /\A\d*\w*\d+x\z/, /\A(?:a)?\w+\d*\d*!\z/,
+     # ... through groups, past repeats that can match nothing, and as repeated groups (second review).
+     /\A(?:\d*)\d*\d*x\z/, /\A\d*(?:a|\d*)\d*x\z/, /\A(?:\d*\d*)\d*x\z/, /\A(?:ba*){2}a*a*x\z/, /\Aa*b*a*b*a*x\z/,
+     /\A\s*\w*\s*\w*\s*\w*\s*\z/, /\A(?:ab)+(?:ab)+(?:ab)+x\z/,
+     # A lookahead holding a variable repeat runs again on each iteration.
+     /\A(?:\d(?!\d*\d*y))+x\z/,
+     # ... and a lookahead's repeats run on from the ones before it (third review).
+     /\A\d*(?=\d*\d*x)/, /\A\d*(?=\d*(?=\d*x))/, /\A\w+(?=\w*\w*\d)\z/,
+     # Without \A a validator retries at every position: one more repeat.
+     /\d*\d*x/, /\w*\d+x\z/,
+     # Two pairs, one after the other, multiply: on one character or not, past a literal, or into a lookahead (fourth review).
+     /\A\d*\d*x\d*\d*y\z/, /\A[a-z]+[a-z0-9]*\.[a-z]+[a-z0-9]*\z/, /\A.*x.*y.*z\z/, /\A\d*\d*[a-z]*[a-z]*x\z/,
+     /\A\d*\w*[a-z]*x\z/, /\d*x\d*\d*y/, /\A\d*\d*(?=x\d*\d*y)\z/,
+     # Bounded repeats count too: each multiplies the work by its range (C10).
+     /\A\d{0,8}\d{0,8}\d{0,8}x\z/, /\A\d?\d?\d?x\z/,
+     # A group trades single iterations with a neighbour that takes only some of its characters, at the seam
+     # with its last iteration, and when bounded or optional, as a{2,50} does (fifth review).
+     /\Aa*(?:ab?)+a*y\z/, /\A\d*(?:\d,?)+\d*y\z/, /\A\d*(?:\d|[a-z]x)+\d*y\z/, /\d*(?:\d,?)+y/,
+     /\Ax*(?:x\d*)+\d*y\z/, /\A\d*(?:\d*x)+x*y\z/, /\Aa*(?:a){2,50}a*y\z/, /\Aa*(?:a)?a*y\z/].each do |regexp|
       it "gives up on #{regexp.inspect}" do
         expect(described_class.pattern_for(regexp)).to be_nil
       end

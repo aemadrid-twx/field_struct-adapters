@@ -69,6 +69,27 @@ module FieldStruct
       # Raised internally when the source has no exact translation.
       class Unsupported < StandardError; end
 
+      # Character sets for the ReDoS checks: one bit per ASCII character,
+      # and bit 128 for "some non-ASCII character" (all of them count as
+      # one, which can only make two sets overlap more).
+      # @return [Integer]
+      NON_ASCII = 1 << 128
+      # @return [Integer]
+      ANY = (1 << 129) - 1
+      # The retry at every position, as an item (see #polynomial?).
+      # @return [Hash{Symbol=>Object}]
+      RETRY = {set: ANY, min: 0, max: Float::INFINITY, alternatives: nil}.freeze
+      # Most ways through one alternative {#paths} tries before giving up.
+      # @return [Integer]
+      PATHS = 1024
+      # A lookaround in a path: it matches nothing and stops nothing.
+      # @return [Hash{Symbol=>Object}]
+      ZERO_WIDTH = {set: 0, pass: ANY, variable: false}.freeze
+      # Single-character escapes in an emitted atom, and what they stand for
+      # (+\b+ only in a class: outside one it's unsupported).
+      # @return [Hash{String=>String}]
+      ESCAPED = {'n' => "\n", 'r' => "\r", 't' => "\t", 'f' => "\f", 'v' => "\v", 'b' => "\b", '0' => "\0"}.freeze
+
       # @param source [String] a Regexp source
       # @param fold_case [Boolean] whether the Regexp is +/i+
       def initialize(source, fold_case:)
@@ -99,8 +120,18 @@ module FieldStruct
         # (:lazy_ok when a "?" after it would make it lazy).
         @quantifiable = false
         @quantified = false
+        # What each open group (and the top level) holds, for the ReDoS
+        # checks: its alternatives, each a list of items (see #item).
+        @frames = [[[]]]
+        @sequences = []
         step while @pos < @source.length
-        @in_class || !@groups.empty? ? nil : @out
+        return nil if @in_class || !@groups.empty?
+
+        # A validator tries the pattern at every position, as if it began with
+        # [\s\S]*: an alternative not anchored by \A has one more repeat.
+        @sequences.concat(@frames.pop.map { |items| [RETRY, *items] })
+        unsupported if @sequences.any? { |items| polynomial?(items) }
+        @out
       rescue Unsupported
         nil
       end
@@ -133,6 +164,7 @@ module FieldStruct
           # Alternatives can match the same text ((a|aa)), so a group holding
           # one counts as a variable repeat: see #repeats.
           @groups.last[2] = true unless @groups.empty?
+          @frames.last << []
           plain_token('|')
         when '.' then atom { @out << '[^\n]' }
         when '^' then plain_token(LINE_START)
@@ -149,8 +181,18 @@ module FieldStruct
         @atom_start = @out.length
         @repeating_group = false
         yield
+        # A class's set is read once it closes (#close_class).
+        @frames.last.last << item(@in_class ? nil : atom_set(@out[@atom_start..]))
         @quantifiable = true
         @quantified = false
+      end
+
+      # @param set [Integer, nil] the characters an atom matches
+      # @param alternatives [Array<Array<Hash>>, nil] a group's, for a group
+      # @return [Hash{Symbol=>Object}] an atom or a group, matched +min+ to
+      #   +max+ times
+      def item(set, alternatives = nil)
+        {set: set, min: 1, max: 1, alternatives: alternatives}
       end
 
       # Emits something a quantifier may not follow (an anchor, +|+).
@@ -174,6 +216,9 @@ module FieldStruct
         # Stacked (a**), possessive (a*+) or on an anchor or lookaround.
         unsupported if !@quantifiable || @quantified
         repeats(more_than_once: char != '?', variable: true)
+        last = @frames.last.last.last
+        last[:min] = char == '+' ? 1 : 0
+        last[:max] = char == '?' ? 1 : Float::INFINITY
         @out << char
         @quantified = :lazy_ok
       end
@@ -182,7 +227,8 @@ module FieldStruct
       # group that holds a variable repeat, like +(a+)++ or +(\w*x){20}+,
       # lets a backtracking engine split one input exponentially many ways:
       # Ruby's memoization hides it, but a JavaScript validator would hang
-      # on a crafted input. So those get no pattern. An exact count over a
+      # on a crafted input. So those get no pattern, unless the group can
+      # split an input only one way ({#unambiguous?}). An exact count over a
       # plain atom (+(\d{3}-){2}+) splits only one way, so it doesn't mark
       # its group. A group holding an alternation counts as varying too, since
       # +(a|aa)+ can split one input many ways.
@@ -192,7 +238,7 @@ module FieldStruct
       #   +{n,m}+), which marks the enclosing group
       # @return [void]
       def repeats(more_than_once:, variable:)
-        unsupported if more_than_once && @repeating_group
+        unsupported if more_than_once && @repeating_group && !unambiguous?(@frames.last.last.last)
         @groups.last[2] = true if variable && !@groups.empty?
       end
 
@@ -215,6 +261,9 @@ module FieldStruct
                  high.empty? ? Float::INFINITY : high.to_i
                end
         repeats(more_than_once: most > 1, variable: !comma.empty? && most != low.to_i)
+        last = @frames.last.last.last
+        last[:min] = low.to_i
+        last[:max] = most
         @pos += body.length
         @out << '{' << body
         # "{n}?" is an optional {n} in Ruby but a lazy {n} in JavaScript, so
@@ -240,6 +289,7 @@ module FieldStruct
           end
         end
         @groups.push([kind, start, false])
+        @frames.push([[]])
         @repeating_group = false
         @quantifiable = false
         @quantified = false
@@ -263,6 +313,17 @@ module FieldStruct
       # @return [void]
       def close_group
         kind, start, repeating = @groups.pop || unsupported
+        alternatives = @frames.pop
+        @sequences.concat(alternatives)
+        @frames.last.last << if kind == :plain
+                               item(alternatives.flatten.reduce(0) { |set, inner| set | inner[:set] }, alternatives)
+                             else
+                               # A lookaround matches no characters, but its repeats run from where
+                               # it stands (#paths), and one holding a variable repeat
+                               # runs again on each iteration of a repeated group around it:
+                               # #unambiguous? refuses that.
+                               {set: 0, min: 0, max: 0, alternatives: nil, lookaround: repeating, body: alternatives}
+                             end
         @out << ')'
         @groups.last[2] = true if repeating && !@groups.empty?
         @quantifiable = kind == :plain
@@ -311,6 +372,7 @@ module FieldStruct
         letter = @source[@class_source...(@pos - 1)][/\A([A-Za-z])(?:-\1)?\z/, 1]
         @folded[@atom_start] = [letter.downcase] if @fold_case && letter && !@class_negated
         @out << ']'
+        @frames.last.last.last[:set] = atom_set(@out[@atom_start..])
         @repeating_group = false
         @quantifiable = true
         @quantified = false
@@ -363,7 +425,10 @@ module FieldStruct
         return class_escape(char) if @in_class
 
         case char
-        when 'A' then plain_token('^')
+        when 'A'
+          plain_token('^')
+          # Matching only at the start stops the retry at every position (#polynomial?).
+          @frames.last.last << {set: 0, min: 1, max: 1, alternatives: nil} if @groups.empty?
         when 'z' then plain_token('$')
         when 'b', 'B' then unsupported # Ruby's word boundary counts é and ſ as word characters
         when 's' then atom { @out << "[#{SPACE}]" }
@@ -468,6 +533,267 @@ module FieldStruct
         unsupported unless char.match?(/\A[A-Za-z]\z/)
         true
       end
+
+      # A repeated group splits one input only one way when its alternatives
+      # start with different characters, none can match nothing, and each
+      # variable repeat inside is one atom whose characters can't also start
+      # what follows it (the next iteration, at the end): +(?:\d{1,3}\.){3}+,
+      # +(?:-[a-z0-9]+)*+, +(?:[^"\\]|\\.)*+. Anything else, a group inside
+      # included, counts as ambiguous.
+      #
+      # @param group [Hash] the repeated group's item
+      # @return [Boolean]
+      def unambiguous?(group)
+        alternatives = group[:alternatives]
+        return false unless alternatives
+        return false if alternatives.any? { |items| items.empty? || items.all? { |inner| nullable?(inner) } }
+        return false if alternatives.flatten.any? { |inner| inner[:alternatives] || inner[:lookaround] }
+
+        firsts = alternatives.map { |items| first(items) }
+        return false unless firsts.combination(2).all? { |one, other| one.nobits?(other) }
+
+        next_iteration = firsts.reduce(0, :|)
+        alternatives.all? do |items|
+          items.each_with_index.all? do |inner, index|
+            inner[:min] == inner[:max] || inner[:set].nobits?(first(items[(index + 1)..], next_iteration))
+          end
+        end
+      end
+
+      # A polynomial blowup instead. Two variable repeats that can take the
+      # same character, with nothing between them that needs another one
+      # (+\d*\d*x+, +.*x.*y+), are a pair: a split can move between them, so an
+      # input costs O(n^2). Each pair that starts where or after another ends
+      # multiplies that again: +\d*\d*\d*x+, +\d*\d*x\d*\d*y+, +.*x.*y.*z+ and
+      # +\d*\d*[a-z]*[a-z]*x+ are O(n^3), slow enough on a long input. So a
+      # chain of two pairs is refused and a single pair passes. Pairs that
+      # overlap without chaining (+a*b*a*b*x+: a with a, b with b) stay
+      # quadratic. Groups are unrolled and alternatives tried one at a time
+      # ({#paths}); a pattern with too many ways through gives up.
+      #
+      # @param items [Array<Hash>] one alternative
+      # @return [Boolean]
+      def polynomial?(items)
+        paths(items).any? { |path, _| chained?(path) }
+      end
+
+      # Every way through +items+, as flat paths of atoms: +set+ (what the atom
+      # takes), +pass+ (the characters a split can carry past it: any, if it
+      # can match nothing) and +variable+ (whether its count varies, +?+
+      # included). A lookaround's body is a path that ends there, since what
+      # follows the lookaround starts again from where it stands.
+      #
+      # @param items [Array<Hash>]
+      # @return [Array(Array<Hash>, Boolean)] each path, and whether it ended
+      #   inside a lookaround
+      def paths(items)
+        items.reduce([[[], false]]) { |sofar, inner| extend_paths(sofar, ways(inner)) }
+      end
+
+      # @param sofar [Array(Array<Hash>, Boolean)] as {#paths}
+      # @param more [Array(Array<Hash>, Boolean)] what can come next
+      # @return [Array(Array<Hash>, Boolean)]
+      def extend_paths(sofar, more)
+        extended = sofar.flat_map { |path, ended| ended ? [[path, true]] : more.map { |tail, stop| [path + tail, stop] } }
+        unsupported if extended.size > PATHS
+        extended
+      end
+
+      # @param inner [Hash]
+      # @return [Array(Array<Hash>, Boolean)] the ways through one item, as {#paths}
+      def ways(inner)
+        if inner[:body]
+          [[[ZERO_WIDTH], false]] + inner[:body].flat_map { |items| paths(items) }.map { |path, _| [path, true] }
+        elsif inner[:alternatives]
+          group_ways(inner)
+        else
+          [[[{set: inner[:set], pass: inner[:min].zero? ? ANY : inner[:set], variable: inner[:min] < inner[:max]}], false]]
+        end
+      end
+
+      # A group, unrolled up to three copies (enough to show a chain), and
+      # skipped when it can be. A group whose count varies is also tried whole,
+      # as one variable repeat of its iterations: those can move to a
+      # neighbour as whole iterations, so +(?:ab)+(?:ab)+(?:ab)+x+ chains (see
+      # #pair?). An unbounded one is tried whole next to one unrolled
+      # iteration too, so a chain can trade iterations on one side and the
+      # first or last iteration's atoms on the other (+x*(?:x\d*)+\d*y+).
+      #
+      # @param inner [Hash] a group
+      # @return [Array(Array<Hash>, Boolean)] as {#paths}
+      def group_ways(inner)
+        body = inner[:alternatives].flat_map { |items| paths(items) }
+        counts = inner[:min] > 3 ? [3] : (inner[:min]..[inner[:max], 3].min).to_a
+        copies = counts.flat_map { |count| (1..count).reduce([[[], false]]) { |sofar, _| extend_paths(sofar, body) } }
+        return copies unless inner[:min] < inner[:max]
+
+        whole = {set: inner[:set], pass: nullable?(inner) ? ANY : inner[:set], variable: true, whole: true,
+                 first: inner[:alternatives].reduce(0) { |set, items| set | first(items) },
+                 last: inner[:alternatives].reduce(0) { |set, items| set | first(items.reverse) },
+                 # Per alternative, the sets of the items an iteration must match, then
+                 # the set of everything it can match: an iteration taken is not empty.
+                 iterations: inner[:alternatives].map do |items|
+                   items.reject { |item| nullable?(item) }.map { |item| item[:set] } << items.reduce(0) { |set, item| set | item[:set] }
+                 end}
+        whole_path = [[[whole], false]]
+        return copies + whole_path unless inner[:max] == Float::INFINITY
+
+        copies + whole_path + extend_paths(whole_path, body) +
+          body.map { |path, ended| ended ? [path, true] : [path + [whole], false] }
+      end
+
+      # Whether a flat path holds a chain of two pairs (see #polynomial?).
+      #
+      # @param path [Array<Hash>] as {#paths}
+      # @return [Boolean]
+      def chained?(path)
+        # The longest chain whose last pair ends at each atom.
+        longest = Array.new(path.size, 0)
+        path.each_with_index do |later, last|
+          next unless later[:variable]
+
+          # What a split can carry from an earlier atom to this one.
+          between = ANY
+          (last - 1).downto(0) do |index|
+            earlier = path[index]
+            longest[last] = [longest[last], 1 + longest[0..index].max].max if pair?(earlier, later, between)
+            between &= earlier[:pass]
+            break if between.zero?
+          end
+          return true if longest[last] >= 2
+        end
+        false
+      end
+
+      # Whether a split can move input between two atoms of a path, given
+      # what it can carry past the ones between them. Two atoms share a
+      # character. A whole group and an atom: the atom can take some whole
+      # iteration (+\d+(?:\d,?)++, not +\d+(?:,\d+)*+). Two whole groups:
+      # their iterations can start and end alike.
+      #
+      # @param earlier [Hash] as {#paths}
+      # @param later [Hash]
+      # @param between [Integer]
+      # @return [Boolean]
+      def pair?(earlier, later, between)
+        return false unless earlier[:variable] && later[:variable]
+
+        if earlier[:whole] && later[:whole]
+          earlier[:first].anybits?(later[:first] & between) && earlier[:last].anybits?(later[:last])
+        elsif earlier[:whole] || later[:whole]
+          group, atom = earlier[:whole] ? [earlier, later] : [later, earlier]
+          # The atom can take some whole iteration: one alternative whose
+          # required items can each be met by a character it carries.
+          carried = atom[:set] & between
+          group[:iterations].any? { |required| required.all? { |set| set.anybits?(carried) } }
+        else
+          earlier[:set].anybits?(later[:set] & between)
+        end
+      end
+
+      # @param items [Array<Hash>] with no group among them (see #unambiguous?)
+      # @param after [Integer] what can start once +items+ all match nothing
+      # @return [Integer] the characters the sequence can start with
+      def first(items, after = 0)
+        set = 0
+        items.each do |inner|
+          set |= inner[:set]
+          return set unless nullable?(inner)
+        end
+        set | after
+      end
+
+      # @param inner [Hash]
+      # @return [Boolean]
+      def nullable?(inner)
+        inner[:min].zero? || inner[:alternatives]&.any? { |items| items.all? { |nested| nullable?(nested) } } || false
+      end
+
+      # The characters one emitted ECMA-262 atom matches: a character, an
+      # escape, a class or an astral +(?:…)+. Anything unexpected is {ANY}.
+      #
+      # @param text [String]
+      # @return [Integer]
+      def atom_set(text)
+        return NON_ASCII if text.start_with?('(')
+        return class_set(text) if text.start_with?('[')
+
+        chars = scan_member(text, 0)
+        chars && chars[1] == text.length ? chars[0] : ANY
+      end
+
+      # @param text [String] +[...]+ or +[^...]+
+      # @return [Integer]
+      def class_set(text)
+        negated = text[1] == '^'
+        pos = negated ? 2 : 1
+        set = 0
+        while pos < text.length - 1
+          low, pos = scan_member(text, pos) || (return ANY)
+          if text[pos] == '-' && pos + 1 < text.length - 1
+            high, pos = scan_member(text, pos + 1) || (return ANY)
+            set |= span(low, high)
+          else
+            set |= low
+          end
+        end
+        negated ? (ANY ^ set) | NON_ASCII : set
+      end
+
+      # @param low [Integer] a one-character set
+      # @param high [Integer] a one-character set
+      # @return [Integer] the range between them
+      def span(low, high)
+        return ANY unless low.positive? && high.positive? && low.nobits?(low - 1) && high.nobits?(high - 1)
+        return NON_ASCII if low == NON_ASCII
+
+        top = high == NON_ASCII ? 127 : high.bit_length - 1
+        set = (((1 << (top + 1)) - 1) ^ (low - 1))
+        high == NON_ASCII ? set | NON_ASCII : set
+      end
+
+      # @param text [String]
+      # @param pos [Integer]
+      # @return [Array(Integer, Integer), nil] the member's set and where
+      #   the next one starts
+      def scan_member(text, pos)
+        char = text[pos] or return nil
+        return [char.ord < 128 ? 1 << char.ord : NON_ASCII, pos + 1] unless char == '\\'
+
+        escaped = text[pos + 1] or return nil
+        case escaped
+        when 'd' then [digits, pos + 2]
+        when 'D' then [(ANY ^ digits) | NON_ASCII, pos + 2]
+        when 'w' then [word, pos + 2]
+        when 'W' then [(ANY ^ word) | NON_ASCII, pos + 2]
+        when 's' then [chars("\t\n\v\f\r "), pos + 2]
+        when 'S' then [(ANY ^ chars("\t\n\v\f\r ")) | NON_ASCII, pos + 2]
+        when 'x' then code(text[pos + 2, 2], pos + 4)
+        when 'u' then code(text[pos + 2, 4], pos + 6)
+        when 'c' then [1 << (text[pos + 2].ord & 0x1F), pos + 3]
+        else [1 << ESCAPED.fetch(escaped, escaped).ord, pos + 2]
+        end
+      end
+
+      # @param hex [String, nil]
+      # @param after [Integer]
+      # @return [Array(Integer, Integer), nil]
+      def code(hex, after)
+        return nil unless hex&.match?(/\A\h+\z/)
+
+        value = hex.to_i(16)
+        [value < 128 ? 1 << value : NON_ASCII, after]
+      end
+
+      # @return [Integer]
+      def digits = chars('0123456789')
+
+      # @return [Integer]
+      def word = chars(['0'..'9', 'a'..'z', 'A'..'Z'].flat_map(&:to_a).join << '_')
+
+      # @param list [String]
+      # @return [Integer]
+      def chars(list) = list.each_char.reduce(0) { |set, char| set | (1 << char.ord) }
 
       # @return [String, nil]
       def take
