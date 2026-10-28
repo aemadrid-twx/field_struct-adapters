@@ -83,7 +83,7 @@ Each `.run` (including each item of `run_each` and each nested action step) is o
 
 ## Checking the spans in a test
 
-The SDK's in-memory exporter collects finished spans, so a spec can assert on them. Here a declined card, with the hooks that run on failure:
+The SDK's in-memory exporter collects finished spans, so a spec can assert on them. Here a declined card, with the hooks that run on failure, then a card that goes through:
 
 <!-- doctest -->
 ```ruby
@@ -113,14 +113,22 @@ end
 
 Checkout.run(card_token: 'tok_declined').code # => :card_declined
 
+exporter.finished_spans.map(&:name).sort # => ['Checkout.run', 'Checkout/audit', 'Checkout/charge_card', 'Checkout/release_stock']
 spans = exporter.finished_spans.to_h { |span| [span.name, span] }
-spans.keys.sort # => ['Checkout.run', 'Checkout/audit', 'Checkout/charge_card', 'Checkout/release_stock']
 spans['Checkout.run'].attributes['actionable.outcome'] # => 'failure'
 spans['Checkout.run'].status.description # => 'card_declined'
 spans['Checkout/charge_card'].attributes['actionable.code'] # => 'card_declined'
+spans['Checkout/charge_card'].attributes.values_at('actionable.action', 'actionable.step', 'actionable.step.kind') # => ['Checkout', 'charge_card', 'method']
 spans['Checkout/release_stock'].attributes['actionable.section'] # => 'failure'
 spans['Checkout/audit'].attributes['actionable.section'] # => 'always'
 spans['Checkout/audit'].parent_span_id == spans['Checkout.run'].span_id # => true
+
+exporter.reset
+Checkout.run(card_token: 'tok_visa').success? # => true
+exporter.finished_spans.map(&:name).sort # => ['Checkout.run', 'Checkout/audit', 'Checkout/charge_card', 'Checkout/send_receipt']
+run = exporter.finished_spans.find { |span| span.name == 'Checkout.run' }
+run.attributes.values_at('actionable.outcome', 'actionable.code') # => ['success', 'success']
+run.status.code == OpenTelemetry::Trace::Status::UNSET # => true
 ```
 
 ## What gets recorded
