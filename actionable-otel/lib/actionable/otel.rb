@@ -156,8 +156,9 @@ module Actionable
         if exception_details == :full
           span.record_exception(error)
         else
-          # to_s, as record_exception does: an anonymous class has no name.
-          span.add_event('exception', attributes: {'exception.type' => error.class.to_s})
+          # An anonymous class has no name: fall back to to_s, as :full's
+          # record_exception does.
+          span.add_event('exception', attributes: {'exception.type' => error.class.name || error.class.to_s})
         end
       end
 
