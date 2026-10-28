@@ -200,6 +200,17 @@ RSpec.describe FieldStruct::Avro, 'encode and decode' do
     value = holder.new(item: {sku: 'a', payload: {'n' => 1}}, id: 'x-1')
     expect(described_class.to_datum(value)).to eq('item' => {'sku' => 'a', 'payload' => '{"n":1}'}, 'id' => 'x-1')
     expect(round_trip(value)).to eq(value)
+
+    # A union overridden to a timestamp holds a Time; its node has no options (no zone: to put back).
+    stamp = struct('Elem::Stamp') { required :at, :union, of: %i[time string], avro: {type: {'type' => 'long', 'logicalType' => 'timestamp-micros'}} }
+    at = Time.utc(2026, 7, 1, 8)
+    expect(round_trip(stamp.new(at: at)).at).to eq(at)
+
+    # A member struct's field overridden to a nullable type can be missing, so it isn't a required key.
+    loose = struct('Elem::Loose') { required :tag, Elem::Item, avro: {type: ['null', {'type' => 'record', 'name' => 'Tag', 'fields' => []}]} }
+    other = struct('Elem::Other') { required :z, :integer }
+    expect { described_class.schema(struct('Elem::Pick') { required :v, :union, of: [loose, other] }) }
+      .to raise_error(ArgumentError, /Elem::Loose has no required fields, so any record fits it/)
   end
 
   it 'passes overridden structs, symbols in arrays and hashes, and zones through correctly' do

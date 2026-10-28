@@ -16,7 +16,8 @@ module FieldStruct
   # 
   # A field's +avro:+ option adjusts its own mapping: +type:+ (the whole Avro
   # type, verbatim), +timestamp:+, +precision:+ / +scale:+ for decimals,
-  # +enum: false+ (a string instead of an enum) and +enum_default:+.
+  # +enum: false+ (a string instead of an enum) and +enum_default:+. On an
+  # array or union field, all but +type:+ apply to its elements or members.
   module Avro
     TIMESTAMPS: ::Array[Symbol]
     VERSION: String
