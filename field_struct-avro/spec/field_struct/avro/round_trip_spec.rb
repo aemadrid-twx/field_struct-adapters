@@ -119,6 +119,26 @@ RSpec.describe FieldStruct::Avro, 'encode and decode' do
     expect(round_trip(event)).to eq(event)
   end
 
+  it 'passes overridden structs, symbols in arrays and hashes, and zones through correctly' do
+    line = struct('Ovr::Line') { required :sku, :string }
+    record = {'type' => 'record', 'name' => 'Line', 'namespace' => 'Ovr', 'fields' => [{'name' => 'sku', 'type' => 'string'}]}
+    klass = struct('Ovr::Order') do
+      required :lines, :array, of: line, avro: {type: {'type' => 'array', 'items' => record}}
+      required :marks, :array, of: :symbol, avro: {type: {'type' => 'array', 'items' => 'string'}}
+      required :meta, :value, avro: {type: {'type' => 'map', 'values' => 'string'}}
+      required :note, :value, avro: {type: %w[null string]}
+      required :at, :time, zone: 'America/Denver', avro: {type: {'type' => 'long', 'logicalType' => 'timestamp-micros'}}
+    end
+    order = klass.new(lines: [{sku: 'a'}], marks: %i[x y], meta: {k: :v}, note: {'n' => 1}, at: '2026-07-01 08:00:00')
+
+    datum = described_class.to_datum(order)
+    expect(datum.slice('lines', 'marks', 'meta', 'note'))
+      .to eq('lines' => [{'sku' => 'a'}], 'marks' => %w[x y], 'meta' => {'k' => 'v'}, 'note' => '{"n":1}')
+    back = round_trip(order)
+    expect(back).to eq(klass.new(order.to_h.merge(meta: {'k' => 'v'})))
+    expect(back.at.utc_offset).to eq(-6 * 3600)
+  end
+
   it 'round-trips a :value member of a union as a value, not as JSON text, in either order' do
     first = struct('Mix::ValueFirst') { required :v, :union, of: %i[value integer] }
     last = struct('Mix::ValueLast') { required :v, :union, of: %i[integer value] }

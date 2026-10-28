@@ -132,7 +132,11 @@ module FieldStruct
       # @param node [Object]
       # @return [Boolean]
       def override?(node)
-        avro_options(node).key?(:type)
+        avro = avro_options(node)
+        return false unless avro.key?(:type)
+
+        # A :value overridden to (nullable) string still holds JSON text.
+        !(value_node?(node) && (Array(avro[:type]) - ['null']) == ['string'])
       end
 
       # @param value [Object]
@@ -140,6 +144,7 @@ module FieldStruct
       def raw(value)
         case value
         when ::Symbol then value.to_s
+        when FieldStruct::Base then dump(value)
         when ::Array then value.map { |item| raw(item) }
         when ::Hash then value.to_h { |key, item| [raw(key), raw(item)] }
         else value
@@ -152,7 +157,10 @@ module FieldStruct
       # @return [Object]
       def load_value(value, node)
         return nil if value.nil?
-        return value if override?(node)
+        if override?(node)
+          # The Avro type is the user's, but the field's zone: still applies.
+          return value.is_a?(::Time) && node.respond_to?(:type) ? rezone(value, node.options[:zone]) : value
+        end
 
         case node
         when Introspection::ArrayNode then value.map { |item| load_value(item, node.element) }
