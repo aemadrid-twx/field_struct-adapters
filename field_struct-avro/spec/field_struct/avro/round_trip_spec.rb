@@ -282,12 +282,15 @@ RSpec.describe FieldStruct::Avro, 'encode and decode' do
     expect { described_class.to_datum(stamp.new(at: '2026-07-01 08:00:00')) }
       .to raise_error(ArgumentError, /avro: \{timestamp:\} must be one of \[:micros, :nanos, :millis\], got :seconds/)
 
-    %i[string].push({'type' => 'string'}, ['null', :string]).each_with_index do |spelling, index|
+    [:string, {'type' => 'string'}, {'type' => 'string', 'x-note' => 'raw'}, ['null', :string]].each_with_index do |spelling, index|
       raw = struct("Opt::Raw#{index}") { required :raw, :value, avro: {type: spelling} }
       value = raw.new(raw: {'a' => 1})
       expect(described_class.to_datum(value)).to eq('raw' => '{"a":1}')
       expect(round_trip(value)).to eq(value)
     end
+
+    uuid = struct('Opt::Uuid') { required :id, :value, avro: {type: {'type' => 'string', 'logicalType' => 'uuid'}} }
+    expect(described_class.to_datum(uuid.new(id: '5f0c3c8e-0000-4000-8000-000000000000'))).to eq('id' => '5f0c3c8e-0000-4000-8000-000000000000')
   end
 
   it 'reads bytes written with an older schema, filling new fields from defaults' do

@@ -34,15 +34,28 @@ module FieldStruct
       # @return [String, Hash{String=>Object}, Array<Object>, nil] the
       #   +type:+ as Avro JSON (symbols as strings), or +nil+ without one
       def type(avro)
-        JSON.parse(JSON.generate(avro[:type])) if avro.key?(:type)
+        json(avro[:type]) if avro.key?(:type)
+      end
+
+      # @param value [Object]
+      # @return [Object] +value+ as JSON would carry it: symbols and Hash
+      #   keys as strings, the rest as given
+      def json(value)
+        case value
+        when ::Hash then value.to_h { |key, item| [key.to_s, json(item)] }
+        when ::Array then value.map { |item| json(item) }
+        when ::Symbol then value.to_s
+        else value
+        end
       end
 
       # @param type [String, Hash{String=>Object}, Array<Object>, nil] from {.type}
       # @return [Boolean] whether it is Avro +string+, nullable or not, in any
-      #   spelling (+"string"+, +{"type" => "string"}+, inside a union)
+      #   spelling (+"string"+, +{"type" => "string"}+ with no logical type,
+      #   inside a union)
       def string?(type)
         branches = Array(type.is_a?(::Hash) ? [type] : type).map do |branch|
-          branch.is_a?(::Hash) && branch.keys == ['type'] ? branch['type'] : branch
+          branch.is_a?(::Hash) && !branch.key?('logicalType') ? branch['type'] : branch
         end
         (branches - ['null']) == ['string']
       end
