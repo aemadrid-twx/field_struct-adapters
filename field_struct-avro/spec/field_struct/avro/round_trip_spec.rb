@@ -226,6 +226,39 @@ RSpec.describe FieldStruct::Avro, 'encode and decode' do
     expect(described_class.decode(v2, bytes, writer_schema: old_schema)).to eq(v2.new(id: 7))
   end
 
+  it "fills fields the writer lacked from field_struct's defaults, even ones Avro can't express" do
+    old_line = struct('Defaults::OldLine') { required :sku, :string }
+    old = struct('Defaults::Old') do
+      required :id, :integer
+      required :line, old_line
+    end
+    bytes = described_class.encode(old.new(id: 7, line: {sku: 'a'}))
+    writer = described_class.schema(old)
+    writer = writer.merge('name' => 'New', 'fields' => writer['fields'].map do |field|
+      field['name'] == 'line' ? field.merge('type' => field['type'].merge('name' => 'NewLine')) : field
+    end)
+
+    line = struct('Defaults::NewLine') do
+      required :sku, :string
+      optional :qty, :big_decimal, round: 2, default: '1.50'
+    end
+    klass = struct('Defaults::New') do
+      required :id, :integer
+      required :line, line
+      optional :blob, :binary, default: 'abc'
+      optional :on, :date, default: Date.new(2020, 1, 1)
+      optional :tags, :array, of: :string, default: -> { %w[new] }
+      optional :note, :string
+    end
+
+    back = described_class.decode(klass, bytes, writer_schema: writer)
+    expect(back).to eq(klass.new(id: 7, line: {sku: 'a'}))
+    expect(back.attributes).to include(blob: 'abc', on: Date.new(2020, 1, 1), tags: %w[new], note: nil)
+    expect(back.line.qty).to eq(BigDecimal('1.50'))
+    # A field the writer had keeps what was written, nil included.
+    expect(described_class.decode(klass, described_class.encode(klass.new(id: 1, line: {sku: 'b'}, on: nil)))).to have_attributes(on: nil)
+  end
+
   it 'refuses bytes whose writer schema has another decimal scale or timestamp precision, instead of misreading them' do
     v1 = struct('Evo::Money') { required :amt, :big_decimal, round: 2 }
     v2 = struct('Evo::Money2') { required :amt, :big_decimal, round: 3 }

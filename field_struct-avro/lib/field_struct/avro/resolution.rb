@@ -21,15 +21,25 @@ module FieldStruct
 
       # @param writer [Object] an +::Avro::Schema+
       # @param reader [Object] an +::Avro::Schema+
-      # @return [void]
+      # @return [Hash{String=>Array<String>}] for each reader record's full
+      #   name, the fields the writer lacked, which the avro gem fills from
+      #   the reader's defaults
       # @raise [ArgumentError] naming each field whose logical type differs
       def self.check(writer, reader)
-        problems = new.compare(writer, reader, '', [])
-        return if problems.empty?
+        resolution = new
+        problems = resolution.compare(writer, reader, '', [])
+        return resolution.absent if problems.empty?
 
         raise ArgumentError, "FieldStruct::Avro can't read these bytes: #{problems.join("; ")}. " \
                              'The avro gem would decode them as the wrong value; this is not a compatible schema change'
       end
+
+      def initialize
+        @absent = Hash.new { |hash, name| hash[name] = [] }
+      end
+
+      # @return [Hash{String=>Array<String>}]
+      attr_reader :absent
 
       # @param writer [Object] an +::Avro::Schema+
       # @param reader [Object] an +::Avro::Schema+
@@ -81,7 +91,10 @@ module FieldStruct
         fields = writer.fields.to_h { |field| [field.name, field] }
         reader.fields.flat_map do |field|
           written = fields[field.name]
-          written ? compare(written.type, field.type, [path, field.name].reject(&:empty?).join('.'), seen + [pair]) : []
+          next compare(written.type, field.type, [path, field.name].reject(&:empty?).join('.'), seen + [pair]) if written
+
+          @absent[reader.fullname] |= [field.name]
+          []
         end
       end
 
