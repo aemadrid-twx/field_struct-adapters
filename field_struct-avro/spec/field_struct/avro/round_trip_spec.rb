@@ -107,6 +107,18 @@ RSpec.describe FieldStruct::Avro, 'encode and decode' do
     expect(round_trip(klass.new(via: card.new(last4: '4242'), amount: 2.5))).to eq(klass.new(via: card.new(last4: '4242'), amount: 2.5))
   end
 
+  it "passes a field with avro: {type:} through as is, since the override is the user's mapping" do
+    klass = struct('Override') do
+      required :raw, :value, avro: {type: {'type' => 'map', 'values' => 'string'}}
+      required :code, :symbol, avro: {type: 'string'}
+      optional :tags, :array, of: :string, avro: {type: {'type' => 'array', 'items' => 'string'}}
+    end
+    event = klass.new(raw: {'a' => 'b'}, code: :ok, tags: %w[x y])
+
+    expect(described_class.to_datum(event)).to eq('raw' => {'a' => 'b'}, 'code' => 'ok', 'tags' => %w[x y])
+    expect(round_trip(event)).to eq(event)
+  end
+
   it 'round-trips a recursive struct' do
     node = struct('Tree::Node') { required :label, :string }
     node.optional :children, :array, of: node

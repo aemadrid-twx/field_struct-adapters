@@ -165,7 +165,18 @@ module FieldStruct
       def exact_time: (::Time time, FieldStruct::Introspection::ScalarNode node) -> ::Time
 
       # _@param_ `node`
-      def avro_options: (FieldStruct::Introspection::ScalarNode node) -> ::Hash[Symbol, Object]
+      def avro_options: (Object node) -> ::Hash[Symbol, Object]
+
+      # A field whose +avro: {type:}+ replaces its mapping: the user chose the
+      # Avro type, so the value travels as field_struct holds it.
+      # 
+      # _@param_ `node`
+      def override?: (Object node) -> bool
+
+      # _@param_ `value`
+      # 
+      # _@return_ — +value+, with symbols as strings (Avro has none)
+      def raw: (Object value) -> Object
 
       # _@param_ `value`
       # 
