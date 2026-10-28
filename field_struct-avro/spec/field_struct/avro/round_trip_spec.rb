@@ -110,6 +110,21 @@ RSpec.describe FieldStruct::Avro, 'encode and decode' do
     expect(round_trip(klass.new(via: card.new(last4: '4242'), amount: 2.5))).to eq(klass.new(via: card.new(last4: '4242'), amount: 2.5))
   end
 
+  it 'round-trips a :value member of a union as a value, not as JSON text, in either order' do
+    first = struct('Mix::ValueFirst') { required :v, :union, of: %i[value integer] }
+    last = struct('Mix::ValueLast') { required :v, :union, of: %i[integer value] }
+
+    [first, last].each do |klass|
+      [{'a' => [1, 'b']}, 5, 'text', [true, nil]].each do |value|
+        back = round_trip(klass.new(v: value))
+
+        expect([back.v, back.v.class]).to eq([value, value.class]), "#{klass}: #{value.inspect} came back as #{back.v.inspect}"
+      end
+    end
+    # Other readers see a long, not the JSON text "5".
+    expect(described_class.to_datum(first.new(v: 5))).to eq('v' => 5)
+  end
+
   it 'round-trips a recursive struct' do
     node = struct('Tree::Node') { required :label, :string }
     node.optional :children, :array, of: node
