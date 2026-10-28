@@ -552,6 +552,8 @@ RSpec.describe FieldStruct::Avro, 'encode and decode' do
     instance = klass.new(v: {'a' => 1}, d: '1.5')
 
     expect(described_class.decode(klass, described_class.encode(instance))).to eq(instance)
+    flagged = struct('FalseOverride') { required :v, :value, avro: {type: false} }
+    expect { described_class.schema(flagged) }.to raise_error(ArgumentError, /FalseOverride doesn't make a valid Avro schema/)
   end
 
   it 'round-trips many generated values' do

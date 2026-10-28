@@ -119,7 +119,7 @@ error.start_with?("FieldStruct::Avro: Typo doesn't make a valid Avro schema") # 
 | `desc:` | `doc` | |
 | `sensitive:` | `"x-fs-sensitive": true` | the avro gem's parser drops `x-` properties: register the Hash/JSON, not a parsed schema |
 
-A field's `avro: {type: …}` replaces its mapping entirely, in the schema and in the bytes: the value goes to Avro as field_struct holds it (symbols as strings, nested structs as records, a time back in its `zone:`), so it has to fit the type you gave. A `:big_decimal` with `avro: {type: 'string'}` raises, for example, because a BigDecimal isn't a string. A `:value` overridden to a (nullable) string still travels as JSON text. The other `avro:` options of an array or union field (`precision:`, `timestamp:`, `enum: false`) apply to its elements or members. `avro:` is a field option: field_struct doesn't accept it inside `element:`.
+A field's `avro: {type: …}` (other than `nil`, which is the same as none) replaces its mapping entirely, in the schema and in the bytes: the value goes to Avro as field_struct holds it (symbols as strings, nested structs as records, a time back in its `zone:`), so it has to fit the type you gave. A `:big_decimal` with `avro: {type: 'string'}` raises, for example, because a BigDecimal isn't a string. A `:value` overridden to a (nullable) string still travels as JSON text. The other `avro:` options of an array or union field (`precision:`, `timestamp:`, `enum: false`) apply to its elements or members. `avro:` is a field option: field_struct doesn't accept it inside `element:`.
 
 ## Defaults, and why
 
