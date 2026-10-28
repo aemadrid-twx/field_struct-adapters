@@ -128,7 +128,7 @@ Decided 2026-10-27:
 1. Timestamps default to **micros**, and encoding raises rather than drop nanoseconds. Micros is what most Avro readers (Spark, BigQuery, Kafka Connect) handle; pass `timestamp: :nanos` to keep everything.
 2. `:big_decimal` without `round:` becomes a **string**: an Avro decimal needs a fixed scale, and without `round:` there isn't one to declare.
 3. Array elements are **always nullable**, because field_struct accepts nil elements.
-4. Enums are emitted as Avro enums. Give `avro: {enum_default:}` if you'll add symbols later: without a default, `decode` raises on a symbol the reader doesn't know, naming the field. The avro gem itself would hand the symbol back, so the instance would fail `valid?`.
+4. Enums are emitted as Avro enums. Give `avro: {enum_default:}` if you'll add symbols later: without a default, `decode` raises on a symbol the reader doesn't know, naming the field. A field mapped to an Avro `string` (`avro: {enum: false}`) is checked the same way and honours `enum_default:` too; one with its own `avro: {type:}` isn't checked. The avro gem itself would hand the symbol back, so the instance would fail `valid?`.
 5. The API is **module functions** plus the opt-in `Methods`; nothing is added to your classes unless you include it.
 6. It's built on `FieldStruct::Introspection`, the walk every adapter shares.
 7. Decoding puts a field's `zone:` back, since Avro timestamps carry no offset.

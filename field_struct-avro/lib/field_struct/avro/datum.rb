@@ -291,9 +291,9 @@ module FieldStruct
       # @return [Object]
       def load_override(value, node)
         if node.is_a?(Introspection::StructNode) && value.is_a?(::Hash)
-          load(node.klass, value)
+          load_struct(node.klass, value)
         elsif node.is_a?(Introspection::ArrayNode) && node.element.is_a?(Introspection::StructNode) && value.is_a?(::Array)
-          value.map { |item| item.is_a?(::Hash) ? load(node.element.klass, item) : item }
+          value.map { |item| item.is_a?(::Hash) ? load_struct(node.element.klass, item) : item }
         elsif value.is_a?(::Time) && node.respond_to?(:options)
           rezone(value, node.options[:zone])
         else
@@ -317,7 +317,7 @@ module FieldStruct
           value.map { |item| load_value(item, element, element_avro) }
         when Introspection::StructNode then load_struct(node.klass, value)
         when Introspection::UnionNode then load_union(value, node)
-        else load_scalar(value, node)
+        else load_scalar(value, node, avro)
         end
       end
 
@@ -332,7 +332,7 @@ module FieldStruct
       def load_union(value, node)
         if value.is_a?(::String)
           member = node.members.find { |candidate| value_node?(candidate) }
-          return member ? load_scalar(value, member) : value
+          return member ? load_scalar(value, member, Options::NONE) : value
         end
         return value unless value.is_a?(::Hash)
 
@@ -345,8 +345,9 @@ module FieldStruct
 
       # @param value [Object]
       # @param node [FieldStruct::Introspection::ScalarNode]
+      # @param avro [Hash{Symbol=>Object}] the +avro:+ options that apply
       # @return [Object]
-      def load_scalar(value, node)
+      def load_scalar(value, node, avro)
         case node.type
         when FieldStruct::Types::Time, FieldStruct::Types::DateTime then rezone(value, node.options[:zone])
         when FieldStruct::Types::Value then Oj.load(value, JSON_LOAD)
@@ -354,9 +355,12 @@ module FieldStruct
           # The avro gem hands back a writer's symbol the reader's enum lacks
           # (the Avro spec says to fail), and the instance would fail valid?.
           enum = node.options[:enum]
-          raise Unknown, value.to_sym if enum && !enum.include?(value.to_sym)
+          return value unless enum && (value.is_a?(::String) || value.is_a?(::Symbol)) && !enum.include?(value.to_sym)
+          # Mapped to an Avro string (avro: {enum: false}), the gem never
+          # applies enum_default:, so it's applied here.
+          return avro[:enum_default].to_s if avro.key?(:enum_default)
 
-          value
+          raise Unknown, value.to_sym
         else value
         end
       end

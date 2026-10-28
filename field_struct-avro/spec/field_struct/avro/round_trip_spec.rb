@@ -576,6 +576,13 @@ RSpec.describe FieldStruct::Avro, 'encode and decode' do
     datum = {'inner' => {'s' => 'void'}}
     expect { described_class.from_datum(holder, datum) }.to raise_error(ArgumentError, /Status::Holder#inner\.s is :void/)
 
+    over = struct('Status::Over') { required :over, inner, avro: {type: {'type' => 'record', 'name' => 'Over_over', 'fields' => [{'name' => 's', 'type' => 'string'}]}} }
+    expect { described_class.from_datum(over, {'over' => {'s' => 'void'}}) }.to raise_error(ArgumentError, /Status::Over#over\.s is :void/)
+    expect(described_class.from_datum(holder, {'inner' => {'s' => 7}}).inner.valid?).to be(false)
+
+    flat = struct('Status::Flat') { required :s, :symbol, enum: %i[open paid], avro: {enum: false, enum_default: :open} }
+    expect(described_class.from_datum(flat, {'s' => 'void'}).s).to eq(:open)
+
     lenient = struct('Status::V1') { required :s, :symbol, enum: %i[open paid], avro: {enum_default: :open} }
     expect(described_class.decode(lenient, bytes, writer_schema: schema).s).to eq(:open)
   end
