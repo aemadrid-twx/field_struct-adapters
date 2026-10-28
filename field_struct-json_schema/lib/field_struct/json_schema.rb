@@ -138,7 +138,7 @@ module FieldStruct
       end
       return nil unless regexp.options.nobits?(UNSUPPORTED_OPTIONS)
 
-      Pattern.new(regexp.source, fold_case: regexp.options.anybits?(Regexp::IGNORECASE)).to_s
+      Pattern.new(regexp.source, fold_case: regexp.options.anybits?(Regexp::IGNORECASE)).translate
     end
 
     # @param value [Object] part of a generated schema
@@ -450,9 +450,9 @@ module FieldStruct
         when FieldStruct::Types::Integer then range({'type' => 'integer'}, options[:in])
         when FieldStruct::Types::Float then range({'type' => 'number'}, options[:in])
         when FieldStruct::Types::BigDecimal then {'type' => 'string', 'pattern' => DECIMAL_PATTERN}
-        when FieldStruct::Types::Date then temporal('date', options[:format], %i[iso8601])
+        when FieldStruct::Types::Date then temporal('date', options[:format])
         when FieldStruct::Types::Time, FieldStruct::Types::DateTime
-          temporal('date-time', options[:format], %i[iso8601])
+          temporal('date-time', options[:format])
         when FieldStruct::Types::Symbol then enum({'type' => 'string'}, options[:enum]&.map(&:to_s))
         when FieldStruct::Types::String then string_schema(type, options)
         when FieldStruct::Types::Value then {}
@@ -485,11 +485,11 @@ module FieldStruct
       end
 
       # @param format [String] the JSON Schema format of the canonical output
-      # @param option [String, Symbol, nil] the field's +format:+
-      # @param canonical [Array<Symbol>] presets that write the canonical form
+      # @param option [String, Symbol, nil] the field's +format:+; only the
+      #   default and +:iso8601+ write the canonical form
       # @return [Hash{String=>Object}]
-      def temporal(format, option, canonical)
-        return {'type' => 'string', 'format' => format} if option.nil? || canonical.include?(option)
+      def temporal(format, option)
+        return {'type' => 'string', 'format' => format} if option.nil? || option == :iso8601
 
         {'type' => 'string'}
       end
@@ -506,7 +506,7 @@ module FieldStruct
       # @return [Hash{String=>Object}]
       def range(schema, bound)
         case bound
-        when ::Array then schema.merge('enum' => bound)
+        when ::Array then enum(schema, bound)
         when ::Range
           out = schema.dup
           low = json_number(bound.begin)
