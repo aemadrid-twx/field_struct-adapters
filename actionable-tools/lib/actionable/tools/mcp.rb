@@ -29,16 +29,21 @@ module Actionable
 
       module_function
 
+      # The keyword splat is named, not anonymous, so sord can type it from its
+      # @param.
+      # rubocop:disable Style/ArgumentsForwarding
+
       # @param action [Class<Actionable::Action>]
-      # @param options [Hash] {Tools.definition}'s keywords; context procs
-      #   receive the server's +server_context+
-      # @return [Class<::MCP::Tool>]
-      def tool(action, **)
-        from(Tools.definition(action, **))
+      # @param options [Hash{Symbol=>Object}] {Tools.definition}'s keywords;
+      #   context procs receive the server's +server_context+
+      # @return [Class] an +::MCP::Tool+ subclass (mcp ships no RBS signatures)
+      def tool(action, **options)
+        from(Tools.definition(action, **options))
       end
+      # rubocop:enable Style/ArgumentsForwarding
 
       # @param definition [Definition]
-      # @return [Class<::MCP::Tool>]
+      # @return [Class] an +::MCP::Tool+ subclass
       def from(definition)
         ::MCP::Tool.define(
           name: definition.name,

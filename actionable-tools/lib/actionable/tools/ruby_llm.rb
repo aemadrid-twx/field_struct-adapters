@@ -21,18 +21,24 @@ module Actionable
     module RubyLLM
       module_function
 
+      # The keyword splat is named, not anonymous, so sord can type it from its
+      # @param.
+      # rubocop:disable Style/ArgumentsForwarding
+
       # @param action [Class<Actionable::Action>]
       # @param approval [Boolean] pause each call until it's approved
       #   (RubyLLM's +requires_approval+)
-      # @param options [Hash] {Tools.definition}'s keywords
-      # @return [Class<::RubyLLM::Tool>]
-      def tool(action, approval: false, **)
-        from(Tools.definition(action, **), approval: approval)
+      # @param options [Hash{Symbol=>Object}] {Tools.definition}'s keywords
+      # @return [Class] a +::RubyLLM::Tool+ subclass (ruby_llm ships no RBS
+      #   signatures)
+      def tool(action, approval: false, **options)
+        from(Tools.definition(action, **options), approval: approval)
       end
+      # rubocop:enable Style/ArgumentsForwarding
 
       # @param definition [Definition]
       # @param approval [Boolean]
-      # @return [Class<::RubyLLM::Tool>]
+      # @return [Class] a +::RubyLLM::Tool+ subclass
       def from(definition, approval: false)
         Class.new(::RubyLLM::Tool) do
           description definition.description
