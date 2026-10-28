@@ -63,7 +63,7 @@ FieldStruct::JSONSchema.pattern_for(/\A(?>a+)\z/)    # => nil
 
 ## Overrides
 
-A field's `json_schema: {...}` option beats the type's own `json_schema` method, which beats the derived schema. `true` and `false` are the always/never schemas. Define `json_schema` on a custom type to describe it; a custom type without one is unconstrained and named, `{"x-ruby-type" => "Money"}`. An override describes a present value: an optional field still adds `null`.
+A field's `json_schema: {...}` option beats the type's own `json_schema` method, which beats the derived schema. `true` and `false` are the always/never schemas. Define `json_schema` on a custom type to describe it; a custom type without one is unconstrained and named after its `ruby_type`: `{"x-ruby-type" => "Rational"}` for a type whose `ruby_type` is `Rational`. An override describes a present value: an optional field still adds `null`.
 
 ```ruby
 class Money < FieldStruct::Types::Base
