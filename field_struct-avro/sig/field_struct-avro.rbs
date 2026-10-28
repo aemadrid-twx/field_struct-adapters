@@ -20,6 +20,7 @@ module FieldStruct
   # array or union field, all but +type:+ apply to its elements or members.
   module Avro
     TIMESTAMPS: ::Array[Symbol]
+    CACHE: FieldStruct::Avro::Cache
     VERSION: String
 
     # The Avro record schema for +klass+, as a Hash with String keys (ready
@@ -76,16 +77,6 @@ module FieldStruct
 
     # _@param_ `klass`
     # 
-    # _@param_ `serialization`
-    # 
-    # _@param_ `timestamp`
-    # 
-    # _@return_ — an +::Avro::Schema+ (the avro gem ships no signatures,
-    # so the sig can't name its class)
-    def self.parsed_schema: (singleton(FieldStruct::Base) klass, Symbol serialization, Symbol timestamp) -> Object
-
-    # _@param_ `klass`
-    # 
     # _@param_ `timestamp`
     def self.check: (Object klass, Object timestamp) -> void
 
@@ -111,6 +102,75 @@ module FieldStruct
         # 
         # _@param_ `options` — see {FieldStruct::Avro.decode}
         def from_avro: (String bytes, **::Hash[Symbol, Object] options) -> FieldStruct::Base
+      end
+    end
+
+    # Keeps what {FieldStruct::Avro.encode} and {FieldStruct::Avro.decode}
+    # would otherwise rebuild on every call: the parsed reader schema of a
+    # class, and a writer schema parsed and checked against it.
+    # 
+    # An entry remembers, for every struct class it covers, the class's Field
+    # objects (in order), its serialization mapping and its name, and a hit
+    # re-reads them, rebuilding when any changed. So a field added, replaced
+    # or renamed after first use, a +serialize+ declared later, or an
+    # anonymous struct assigned to a constant (which renames its record) is
+    # picked up. Fields are frozen, so comparing the arrays compares each
+    # field by identity.
+    # 
+    # @api private
+    class Cache
+      WRITERS_MAX: Integer
+
+      def initialize: () -> void
+
+      # _@param_ `klass`
+      # 
+      # _@param_ `serialization`
+      # 
+      # _@param_ `timestamp`
+      def reader: (singleton(FieldStruct::Base) klass, Symbol serialization, Symbol timestamp) -> FieldStruct::Avro::Cache::Reader
+
+      # _@param_ `writer_schema`
+      # 
+      # _@param_ `reader`
+      # 
+      # _@return_ — the
+      # parsed writer schema, and the Avro field names it lacked per struct
+      # class, which {Datum#load} leaves to field_struct's defaults
+      def writer: ((::Hash[String, Object] | String) writer_schema, FieldStruct::Avro::Cache::Reader reader) -> [Object, ::Hash[singleton(FieldStruct::Base), ::Array[String]]]
+
+      # What an entry is valid for, per class: its Field objects, its
+      # serialization mapping and its name.
+      # 
+      # _@param_ `klass`
+      # 
+      # _@param_ `serialization`
+      def self.stamp: (singleton(FieldStruct::Base) klass, Symbol serialization) -> [::Array[FieldStruct::Field], Object, String]
+
+      # _@param_ `stamps`
+      # 
+      # _@param_ `serialization`
+      def fresh?: (::Hash[singleton(FieldStruct::Base), ::Array[Object]] stamps, Symbol serialization) -> bool
+
+      # A reader entry. (A plain class, not a Struct: sord writes a Struct
+      # constant as +::Struct+ without its type parameter, which rbs refuses.)
+      class Reader
+        # _@param_ `parsed`
+        # 
+        # _@param_ `records`
+        # 
+        # _@param_ `stamps`
+        def initialize: (Object parsed, ::Hash[singleton(FieldStruct::Base), ::Array[String]] records, ::Hash[singleton(FieldStruct::Base), ::Array[Object]] stamps) -> void
+
+        # _@return_ — the +::Avro::Schema+ (the avro gem ships no
+        # signatures, so the sig can't name its class)
+        attr_reader parsed: Object
+
+        # _@return_ — the Avro
+        # record names each struct class was written as
+        attr_reader records: ::Hash[singleton(FieldStruct::Base), ::Array[String]]
+
+        attr_reader stamps: ::Hash[singleton(FieldStruct::Base), ::Array[Object]]
       end
     end
 
@@ -576,6 +636,11 @@ module FieldStruct
       # 
       # _@param_ `what`
       def check_name: (String name, String what) -> void
+
+      # Each struct class's {Cache.stamp}, taken before the class was read,
+      # so a class changed while {#schema} ran makes the entry stale rather
+      # than a stale entry look fresh.
+      attr_reader stamps: ::Hash[singleton(FieldStruct::Base), ::Array[Object]]
 
       # The Avro full names each struct class was written as, filled in by
       # {#schema}. An anonymous struct used in two fields has two.
