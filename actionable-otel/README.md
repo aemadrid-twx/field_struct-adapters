@@ -81,6 +81,48 @@ Each `.run` (including each item of `run_each` and each nested action step) is o
 | `actionable.step.kind` | step spans | `method`, `action` or `case` |
 | `actionable.section` | step spans | `main`, `success`, `failure`, `skip` or `always` |
 
+## Checking the spans in a test
+
+The SDK's in-memory exporter collects finished spans, so a spec can assert on them. Here a declined card, with the hooks that run on failure:
+
+<!-- doctest -->
+```ruby
+exporter = OpenTelemetry::SDK::Trace::Export::InMemorySpanExporter.new
+OpenTelemetry::SDK.configure do |c|
+  c.add_span_processor(OpenTelemetry::SDK::Trace::Export::SimpleSpanProcessor.new(exporter))
+end
+
+class Checkout < Actionable::Action
+  input do
+    required :card_token, :string
+  end
+
+  step :charge_card
+  on_success :send_receipt
+  on_failure :release_stock
+  always :audit
+
+  def charge_card
+    fail!(:card_declined, 'The card was declined') if input.card_token == 'tok_declined'
+  end
+
+  def send_receipt = nil
+  def release_stock = nil
+  def audit = nil
+end
+
+Checkout.run(card_token: 'tok_declined').code # => :card_declined
+
+spans = exporter.finished_spans.to_h { |span| [span.name, span] }
+spans.keys.sort # => ['Checkout.run', 'Checkout/audit', 'Checkout/charge_card', 'Checkout/release_stock']
+spans['Checkout.run'].attributes['actionable.outcome'] # => 'failure'
+spans['Checkout.run'].status.description # => 'card_declined'
+spans['Checkout/charge_card'].attributes['actionable.code'] # => 'card_declined'
+spans['Checkout/release_stock'].attributes['actionable.section'] # => 'failure'
+spans['Checkout/audit'].attributes['actionable.section'] # => 'always'
+spans['Checkout/audit'].parent_span_id == spans['Checkout.run'].span_id # => true
+```
+
 ## What gets recorded
 
 - **A declared failure is an error.** The run span's status is set to error with the code as its description (`:invalid_input` included: a run that fails its input still gets a span). No exception event is recorded for it, because nothing was raised. Declared failures (`card_declined`, `not_found`) count toward your APM's error rate; filter on `actionable.code` to separate them from exceptions.
