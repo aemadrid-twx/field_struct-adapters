@@ -1,3 +1,5 @@
+<img src="docs/assets/pair.svg" alt="field_struct and actionable logos" width="134">
+
 # field_struct-adapters
 
 Optional gems that connect [field_struct](https://github.com/aemadrid-twx/field_struct) and [actionable](https://github.com/aemadrid-twx/actionable) to other formats and tools. Each one is its own gem, so you install, load and upgrade only the ones you use.
