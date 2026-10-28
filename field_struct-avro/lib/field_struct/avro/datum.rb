@@ -15,7 +15,17 @@ module FieldStruct
 
       # A time too precise for its field, raised deep in {#dump_value} and
       # turned into an ArgumentError naming the field by {#dump}.
-      class Imprecise < ArgumentError; end
+      class Imprecise < ArgumentError
+        # @return [::Time]
+        attr_reader :time
+
+        # @param time [::Time]
+        # @param precision [Symbol]
+        def initialize(time, precision)
+          @time = time
+          super("more precision than timestamp-#{precision}; round it, or use timestamp: :nanos")
+        end
+      end
       private_constant :Imprecise
 
       # @param serialization [Symbol]
@@ -38,7 +48,10 @@ module FieldStruct
         properties(struct.class).to_h do |property|
           [property.key, dump_value(struct.public_send(property.field.name), property.node, Options.field(property))]
         rescue Imprecise => e
-          raise ArgumentError, "FieldStruct::Avro: #{struct.class.name || struct.class.inspect}##{property.field.name} #{e.message}"
+          # A sensitive field's value stays out of the message, which ends up in logs.
+          value = property.field.sensitive? ? 'a sensitive time' : e.time.iso8601(9)
+          raise ArgumentError, "FieldStruct::Avro: #{struct.class.name || struct.class.inspect}##{property.field.name} " \
+                               "is #{value}, which has #{e.message}"
         end
       end
 
@@ -159,8 +172,7 @@ module FieldStruct
         precision = Options.timestamp(avro, @timestamp)
         return time if (time.nsec % NANOS.fetch(precision)).zero?
 
-        raise Imprecise, "is #{time.iso8601(9)}, which has more precision than timestamp-#{precision}; " \
-                         'round it, or use timestamp: :nanos'
+        raise Imprecise.new(time, precision)
       end
 
       # A field whose +avro: {type:}+ replaces its mapping: the user chose the

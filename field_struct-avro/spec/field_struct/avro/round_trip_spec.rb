@@ -76,6 +76,16 @@ RSpec.describe FieldStruct::Avro, 'encode and decode' do
     expect(round_trip(tick, timestamp: :nanos).at.nsec).to eq(123_456_789)
   end
 
+  it "keeps a sensitive time's value out of the precision error" do
+    klass = struct('Session') { required :born, :time, sensitive: true }
+    session = klass.new(born: '2026-10-25T21:55:12.123456789Z')
+
+    expect { described_class.encode(session) }.to raise_error(ArgumentError) { |error|
+      expect(error.message).to eq('FieldStruct::Avro: Session#born is a sensitive time, which has more precision ' \
+                                  'than timestamp-micros; round it, or use timestamp: :nanos')
+    }
+  end
+
   it 'honours a per-field avro: {timestamp:}, refusing what it would drop' do
     klass = struct('Log') do
       required :at, :time, avro: {timestamp: :millis}
