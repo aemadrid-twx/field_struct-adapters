@@ -10,6 +10,7 @@ unless defined?(FieldStruct::Introspection)
                    'use a field_struct with it (develop, until the next release)'
 end
 require_relative 'avro/version'
+require_relative 'avro/options'
 require_relative 'avro/schema_builder'
 require_relative 'avro/datum'
 require_relative 'avro/resolution'

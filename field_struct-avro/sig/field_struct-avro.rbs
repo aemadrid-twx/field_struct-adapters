@@ -194,7 +194,6 @@ module FieldStruct
     class Datum
       NANOS: ::Hash[Symbol, Integer]
       JSON_LOAD: ::Hash[Symbol, Object]
-      NONE: ::Hash[Symbol, Object]
 
       # _@param_ `serialization`
       # 
@@ -210,6 +209,60 @@ module FieldStruct
       # 
       # _@param_ `datum`
       def load: (singleton(FieldStruct::Base) klass, ::Hash[String, Object] datum) -> FieldStruct::Base
+    end
+
+    # A field's +avro:+ option, read the same way by {SchemaBuilder} (the
+    # schema) and {Datum} (the bytes), so the two can't disagree.
+    # 
+    # @api private
+    module Options
+      NONE: ::Hash[Symbol, Object]
+
+      # _@param_ `property`
+      # 
+      # _@return_ — the field's +avro:+ option. It is a
+      # field option: struct and union nodes carry no options, and core
+      # refuses +element: {avro: …}+.
+      def self.field: (FieldStruct::Introspection::Property property) -> ::Hash[Symbol, Object]
+
+      # An array's elements and a union's members take the field's options,
+      # except +:type+, which replaces only the field it was given on.
+      # 
+      # _@param_ `avro`
+      def self.nested: (::Hash[Symbol, Object] avro) -> ::Hash[Symbol, Object]
+
+      # _@param_ `avro`
+      # 
+      # _@return_ — the
+      # +type:+ as Avro JSON (symbols as strings), or +nil+ without one
+      def self.type: (::Hash[Symbol, Object] avro) -> (String | ::Hash[String, Object] | ::Array[Object])?
+
+      # _@param_ `value`
+      # 
+      # _@return_ — +value+ as JSON would carry it: symbols and Hash
+      # keys as strings, the rest as given
+      def self.json: (Object value) -> Object
+
+      # _@param_ `type` — from {.type}
+      # 
+      # _@return_ — whether it is Avro +string+, nullable or not, in any
+      # spelling (+"string"+, +{"type" => "string"}+ with no logical type,
+      # inside a union)
+      def self.string?: ((String | ::Hash[String, Object] | ::Array[Object])? _type) -> bool
+
+      # _@param_ `avro`
+      # 
+      # _@param_ `default` — the +timestamp:+ given to the call
+      def self.timestamp: (::Hash[Symbol, Object] avro, Symbol default) -> Symbol
+
+      # _@param_ `avro`
+      # 
+      # _@param_ `options` — the field's options
+      # 
+      # _@param_ `type`
+      # 
+      # _@return_ — the decimal scale, +nil+ when it travels as a string
+      def self.scale: (::Hash[Symbol, Object] avro, ::Hash[Symbol, Object] options, FieldStruct::Types::BigDecimal _type) -> Object
     end
 
     # Checks a writer and reader schema pair before {Avro.decode} resolves
