@@ -41,8 +41,8 @@ module FieldStruct
       private
 
       # @param value [Object]
-      # @param node [Introspection::ScalarNode, Introspection::ArrayNode,
-      #   Introspection::UnionNode, Introspection::StructNode]
+      # @param node [FieldStruct::Introspection::ScalarNode, FieldStruct::Introspection::ArrayNode,
+      #   FieldStruct::Introspection::UnionNode, FieldStruct::Introspection::StructNode]
       # @return [Object]
       def dump_value(value, node)
         return nil if value.nil?
@@ -56,7 +56,7 @@ module FieldStruct
       end
 
       # @param value [Object]
-      # @param node [Introspection::UnionNode]
+      # @param node [FieldStruct::Introspection::UnionNode]
       # @return [Object]
       def dump_union(value, node)
         member = node.members.find { |candidate| member_of?(value, candidate) }
@@ -64,8 +64,8 @@ module FieldStruct
       end
 
       # @param value [Object]
-      # @param node [Introspection::ScalarNode, Introspection::ArrayNode,
-      #   Introspection::UnionNode, Introspection::StructNode]
+      # @param node [FieldStruct::Introspection::ScalarNode, FieldStruct::Introspection::ArrayNode,
+      #   FieldStruct::Introspection::UnionNode, FieldStruct::Introspection::StructNode]
       # @return [Boolean]
       def member_of?(value, node)
         case node
@@ -76,7 +76,7 @@ module FieldStruct
       end
 
       # @param value [Object]
-      # @param node [Introspection::ScalarNode]
+      # @param node [FieldStruct::Introspection::ScalarNode]
       # @return [Object]
       def dump_scalar(value, node)
         case node.type
@@ -89,7 +89,7 @@ module FieldStruct
         end
       end
 
-      # @param node [Introspection::ScalarNode]
+      # @param node [FieldStruct::Introspection::ScalarNode]
       # @return [Boolean] whether the decimal travels as an Avro decimal
       def decimal?(node)
         avro = avro_options(node)
@@ -97,7 +97,7 @@ module FieldStruct
       end
 
       # @param time [::Time]
-      # @param node [Introspection::ScalarNode]
+      # @param node [FieldStruct::Introspection::ScalarNode]
       # @return [::Time]
       # @raise [ArgumentError] when the precision would drop part of +time+
       def exact_time(time, node)
@@ -108,7 +108,7 @@ module FieldStruct
                              'round it, or use timestamp: :nanos'
       end
 
-      # @param node [Introspection::ScalarNode]
+      # @param node [FieldStruct::Introspection::ScalarNode]
       # @return [Hash{Symbol=>Object}]
       def avro_options(node)
         options = node.options[:avro]
@@ -116,8 +116,8 @@ module FieldStruct
       end
 
       # @param value [Object]
-      # @param node [Introspection::ScalarNode, Introspection::ArrayNode,
-      #   Introspection::UnionNode, Introspection::StructNode]
+      # @param node [FieldStruct::Introspection::ScalarNode, FieldStruct::Introspection::ArrayNode,
+      #   FieldStruct::Introspection::UnionNode, FieldStruct::Introspection::StructNode]
       # @return [Object]
       def load_value(value, node)
         return nil if value.nil?
@@ -134,7 +134,7 @@ module FieldStruct
       # member whose keys it has; anything else goes to the union as is.
       #
       # @param value [Object]
-      # @param node [Introspection::UnionNode]
+      # @param node [FieldStruct::Introspection::UnionNode]
       # @return [Object]
       def load_union(value, node)
         return value unless value.is_a?(::Hash)
@@ -147,7 +147,7 @@ module FieldStruct
       end
 
       # @param value [Object]
-      # @param node [Introspection::ScalarNode]
+      # @param node [FieldStruct::Introspection::ScalarNode]
       # @return [Object]
       def load_scalar(value, node)
         case node.type

@@ -1,0 +1,383 @@
+module FieldStruct
+  # Generates a JSON Schema (draft 2020-12) describing the JSON a
+  # {FieldStruct::Base} subclass reads and writes: what +to_json+ emits for a
+  # valid instance, which +from_json+ reads back. Other tools take it from
+  # there: API docs, validators in other languages, LLM tool definitions,
+  # TypeScript types.
+  # 
+  #   class User < FieldStruct::Base
+  #     required :name, :string
+  #     optional :age,  :integer, in: 0..150
+  #   end
+  # 
+  #   FieldStruct::JSONSchema.generate(User)   # or User.to_json_schema, with Methods
+  #   # => {"$schema"=>"https://json-schema.org/draft/2020-12/schema",
+  #   #     "title"=>"User", "type"=>"object",
+  #   #     "properties"=>{"name"=>{"type"=>"string"},
+  #   #                    "age"=>{"type"=>["integer", "null"], "minimum"=>0, "maximum"=>150}},
+  #   #     "required"=>["name"]}
+  # 
+  # Design choices:
+  # 
+  # * **The schema describes the canonical JSON, not every input the
+  #   setters coerce.** +age: "30"+ is a valid assignment but not valid
+  #   against +"type": "integer"+. BigDecimal is a string (as +to_json+
+  #   writes it), times are RFC 3339 +date-time+ strings.
+  # * **Property names** are the +serialize :json+ external names (see
+  #   {Base.serialize}); pass +serialization:+ to describe another format's.
+  # * **Required** lists required fields without a +default:+; a required
+  #   field with a default may be left out of the input. Optional fields
+  #   accept +null+, and so does every array element (validation skips
+  #   +nil+ elements). An optional String-family field with +enum:+ or a
+  #   +format:+ also accepts a blank string, which counts as missing there.
+  # * **Constraints** map where JSON Schema has a keyword: +enum:+ → +enum+,
+  #   an +in:+ Range → +minimum+ / +maximum+ / +exclusiveMaximum+ (an
+  #   infinite end is left open), an +in:+ Array → +enum+, a Regexp
+  #   +format:+ → +pattern+, translated to ECMA-262 by {.pattern_for}. A
+  #   Regexp with no exact translation is kept as +x-ruby-pattern+, an
+  #   annotation no validator checks; which Regexps translate can grow
+  #   between versions. +in:+ on dates, times and decimals has no keyword
+  #   and is left out.
+  # * **UUID, URL, Email** are described by the Regexp the struct checks:
+  #   the default UUID one is +format: uuid+; URL and Email defaults become
+  #   patterns, since JSON Schema's +uri+ and +email+ are stricter. An array
+  #   of them checks nothing unless +element:+ gives a +format:+.
+  # * **Nested structs** go in +$defs+ under their class name and are
+  #   referenced with +$ref+; the root class is +#+, so recursive structs
+  #   work. An anonymous nested struct is inlined.
+  # * **Annotations:** +description:+ → +description+; a +default:+ that is
+  #   already a literal of the field's JSON type → +default+ (a callable,
+  #   or one the setter would convert, is left out);
+  #   +sensitive: true+ → +x-sensitive+ (+to_json+ still writes the value).
+  # * **Overrides:** a field's +json_schema:+ option, then the type's own
+  #   +json_schema+ method (define one on a custom type), replace the derived schema of a present
+  #   value (an optional field still adds +null+). A
+  #   custom type with neither is unconstrained (+{}+) and named with
+  #   +x-ruby-type+. +unknown_attributes :raise+ sets
+  #   +additionalProperties: false+.
+  module JSONSchema
+    DRAFT: String
+    DECIMAL_PATTERN: String
+    BLANK_STRING: ::Hash[String, String]
+    UNSUPPORTED_OPTIONS: Integer
+    VERSION: String
+
+    # Generate the JSON Schema for a FieldStruct subclass.
+    # 
+    # _@param_ `klass`
+    # 
+    # _@param_ `serialization` — the +serialize+ format whose external names become property names (an undeclared format uses the field names, as its serializer does)
+    # 
+    # _@return_ — the schema, with String keys, ready for
+    # +Oj.dump+. It's a fresh copy: changing it doesn't touch the class.
+    def self.generate: (singleton(FieldStruct::Base) klass, ?serialization: (Symbol | String)) -> ::Hash[String, Object]
+
+    # Translate a Regexp to an ECMA-262 +pattern+ string that matches the
+    # same strings under the +u+ flag. See {Pattern} for the rules.
+    # 
+    #   FieldStruct::JSONSchema.pattern_for(/\A\d+\.\d+\z/)  # => "^\\d+\\.\\d+$"
+    #   FieldStruct::JSONSchema.pattern_for(/\A\h+\z/i)      # => "^[0-9a-fA-F]+$"
+    #   FieldStruct::JSONSchema.pattern_for(/\A(?>a+)\z/)    # => nil
+    # 
+    # _@param_ `regexp`
+    # 
+    # _@return_ — the pattern, or +nil+ when there's no exact
+    # ECMA-262 equivalent
+    def self.pattern_for: (Regexp regexp) -> String?
+
+    # _@param_ `value` — part of a generated schema
+    # 
+    # _@return_ — +value+ with every Hash, Array and String copied, so a
+    # caller can't reach the field options the schema was built from
+    def self.deep_copy: (Object value) -> Object
+
+    # Walks one root class, collecting named nested structs into +$defs+.
+    # @api private
+    class Builder
+      # _@param_ `root`
+      # 
+      # _@param_ `serialization`
+      def initialize: (singleton(FieldStruct::Base) root, Symbol serialization) -> void
+
+      def schema: () -> ::Hash[String, Object]
+
+      # _@param_ `klass`
+      def object_schema: (singleton(FieldStruct::Base) klass) -> ::Hash[String, Object]
+
+      # _@param_ `property`
+      def property_schema: (FieldStruct::Introspection::Property property) -> ::Hash[String, Object]
+
+      # An optional field's schema: +null+ too (an override describes a
+      # present value, so it gets +null+ like any other), plus a blank string
+      # when the field is String-family and its schema would refuse one.
+      # 
+      # _@param_ `schema`
+      # 
+      # _@param_ `type`
+      def optional: (::Hash[String, Object] schema, FieldStruct::Types::Base _type) -> ::Hash[String, Object]
+
+      # _@param_ `field`
+      def annotations: (FieldStruct::Field field) -> ::Hash[String, Object]
+
+      # The declared default as +to_json+ writes it, when that's certain
+      # without coercing: a literal of the field's own JSON type. Anything
+      # else (a callable, a value the setter would convert) is left out.
+      # 
+      # _@param_ `field`
+      def json_default: (FieldStruct::Field field) -> Object?
+
+      # _@param_ `value`
+      # 
+      # _@return_ — whether +value+ is a non-nil JSON value
+      def json_value?: (Object value) -> bool
+
+      # The node's schema: what its type's own +json_schema+ method returns,
+      # when the type defines one, else derived from the node.
+      # 
+      # _@param_ `node`
+      def node_schema: ((FieldStruct::Introspection::ScalarNode | FieldStruct::Introspection::ArrayNode | FieldStruct::Introspection::UnionNode | FieldStruct::Introspection::StructNode) node) -> ::Hash[String, Object]
+
+      # _@param_ `node`
+      def array_schema: (FieldStruct::Introspection::ArrayNode node) -> ::Hash[String, Object]
+
+      # _@param_ `node`
+      # 
+      # _@return_ — +{}+ when a member accepts anything
+      def union_schema: (FieldStruct::Introspection::UnionNode node) -> ::Hash[String, Object]
+
+      # _@param_ `klass`
+      def ref_for: (singleton(FieldStruct::Base) klass) -> ::Hash[String, Object]
+
+      # _@param_ `klass` — an anonymous struct
+      def inline: (singleton(FieldStruct::Base) klass) -> ::Hash[String, Object]
+
+      # _@param_ `type`
+      # 
+      # _@param_ `options`
+      def scalar_schema: (FieldStruct::Types::Base _type, ::Hash[Symbol, Object] options) -> ::Hash[String, Object]
+
+      # The struct checks a String-family value only against the +format:+
+      # Regexp in +options+ (UUID, URL and Email fields get their default
+      # when none is declared; array elements get one only through
+      # +element:+), so that Regexp is the whole constraint. JSON Schema's
+      # +email+ and +uri+ formats are stricter than our defaults, so those
+      # become patterns; the default UUID Regexp is exactly +format: uuid+.
+      # 
+      # _@param_ `type` — a String-family type
+      # 
+      # _@param_ `options`
+      def string_schema: (FieldStruct::Types::String _type, ::Hash[Symbol, Object] options) -> ::Hash[String, Object]
+
+      # _@param_ `format` — the JSON Schema format of the canonical output
+      # 
+      # _@param_ `option` — the field's +format:+
+      # 
+      # _@param_ `canonical` — presets that write the canonical form
+      def temporal: (String format, (String | Symbol)? option, ::Array[Symbol] canonical) -> ::Hash[String, Object]
+
+      # _@param_ `schema`
+      # 
+      # _@param_ `values`
+      def enum: (::Hash[String, Object] schema, ::Array[Object]? values) -> ::Hash[String, Object]
+
+      # _@param_ `schema`
+      # 
+      # _@param_ `bound` — an +in:+ option
+      def range: (::Hash[String, Object] schema, (::Range[Numeric] | ::Array[Object])? bound) -> ::Hash[String, Object]
+
+      # _@param_ `bound` — a Range end
+      # 
+      # _@return_ — a JSON number, or +nil+ for an open or
+      # infinite end (JSON has no Infinity)
+      def json_number: (Numeric? bound) -> (Integer | Float)?
+
+      # _@param_ `type` — a type FieldStruct doesn't ship
+      def custom_schema: (FieldStruct::Types::Base _type) -> ::Hash[String, Object]
+
+      # A +json_schema:+ override (field option or the type's +json_schema+)
+      # as a Hash: the boolean schemas become their object forms.
+      # 
+      # _@param_ `value`
+      def override: ((::Hash[String, Object] | bool)? value) -> ::Hash[String, Object]?
+
+      # _@param_ `schema`
+      # 
+      # _@return_ — +schema+ also accepting +null+
+      def nullable: (::Hash[String, Object] schema) -> ::Hash[String, Object]
+    end
+
+    # Adds +Klass.to_json_schema+ to the classes that include it, so a tool
+    # that asks an object for its schema (RubyLLM takes any object that
+    # responds to +to_json_schema+) can take the class itself:
+    # 
+    #   class User < FieldStruct::Base
+    #     include FieldStruct::JSONSchema::Methods
+    #   end
+    #   User.to_json_schema  # same as FieldStruct::JSONSchema.generate(User)
+    module Methods
+      # _@param_ `base`
+      def self.included: (Class base) -> void
+
+      # Class methods added by {Methods}.
+      module ClassMethods
+        # _@param_ `serialization` — see {FieldStruct::JSONSchema.generate}
+        def to_json_schema: (?serialization: Symbol) -> ::Hash[String, Object]
+      end
+    end
+
+    # Translates a Ruby Regexp source into an ECMA-262 pattern that matches
+    # the same strings under the +u+ flag (what JSON Schema 2020-12 and Ajv
+    # use), or gives up. A wrong pattern would make a validator reject values
+    # the struct accepts, so anything without an exact equivalent returns
+    # +nil+ rather than a near miss:
+    # 
+    # * +\A+ / +\z+ become +^+ / +$+; bare +^+ / +$+ (line anchors in Ruby)
+    #   become lookarounds. +.+ becomes +[^\n]+ and +\s+ / +\S+ become Ruby's
+    #   ASCII whitespace set; +\h+ / +\H+ become hex classes.
+    # * An escaped non-syntax character (+\-+, +\ +, +\@+) loses its
+    #   backslash outside a class, since +u+ mode rejects it.
+    # * Case-insensitive (+/i+) is spelled out for ASCII letters, with Ruby's
+    #   extra folds (+s+ also matches the long s U+017F, +k+ the Kelvin sign
+    #   U+212A): +[a-f]+ becomes +[a-fA-F]+.
+    # * Gives up on: Ruby-only escapes (+\Z+, +\G+, +\p{…}+, +\e+, …),
+    #   backreferences, groups other than +(?:+, +(?=+, +(?!+, +(?<=+,
+    #   +(?<!+ and +(?<name>+, possessive or stacked quantifiers, +{n}?+
+    #   (optional in Ruby, lazy in JavaScript), a quantified anchor or
+    #   lookaround, +{,n}+, nested classes and +&&+, a leading +]+ in a
+    #   class, non-ASCII bytes in +\x+, astral characters in a class, +\b+ /
+    #   +\B+ outside a class (Unicode-aware in Ruby, ASCII in JavaScript), and
+    #   under +/i+: any non-ASCII character, +\x+ / +\u+ escapes, +\W+ / +\D+
+    #   in a class, ranges whose ends aren't both letters but which cover
+    #   letters, and letters that could pair into one Ruby folds to one
+    #   character (+ss+ matches +ß+, +fi+ matches +ﬁ+, and so do +s{2}+ and
+    #   +[s]s+).
+    # 
+    # Without the +u+ flag an astral character (outside the BMP) counts as
+    # two code units, so +.+ and negated classes differ there. The line
+    # anchors use lookbehind, which RE2-based validators (Go, Rust) reject.
+    # 
+    # @api private
+    class Pattern
+      SHARED_ESCAPES: String
+      SYNTAX: String
+      SPACE: String
+      HEX: String
+      LINE_START: String
+      LINE_END: String
+      EXTRA_FOLDS: ::Hash[String, String]
+      MULTI_FOLD: Regexp
+      LETTERS: ::Array[::Range[String]]
+
+      # _@param_ `source` — a Regexp source
+      # 
+      # _@param_ `fold_case` — whether the Regexp is +/i+
+      def initialize: (String source, fold_case: bool) -> void
+
+      # _@return_ — the ECMA-262 pattern, or +nil+ when there is no
+      # exact translation
+      def to_s: () -> String?
+
+      def step: () -> void
+
+      # _@param_ `char`
+      def outside_char: (String char) -> void
+
+      # Emits something a quantifier may follow.
+      def atom: () -> void
+
+      # Emits something a quantifier may not follow (an anchor, +|+).
+      # 
+      # _@param_ `text`
+      def plain_token: (String text) -> void
+
+      # _@param_ `char` — +*+, +++ or +?+
+      def quantifier: (String char) -> void
+
+      def interval: () -> void
+
+      def group: () -> void
+
+      # _@return_ — +:lookaround+ or +:plain+
+      def named_or_lookbehind: () -> Symbol
+
+      def close_group: () -> void
+
+      def open_class: () -> void
+
+      # _@param_ `char`
+      def class_char: (String char) -> void
+
+      def close_class: () -> void
+
+      # Under +/i+, a letter in a class stands for every character Ruby folds
+      # it with: +b+ becomes +bB+, +s+ becomes +sS\u017F+, and an ASCII range
+      # +a-f+ becomes +a-fA-F+ (plus +\u017F+ / +K+ when it covers +s+ / +k+). A
+      # range with a letter at only one end has no folded form.
+      # 
+      # _@param_ `char` — a cased letter inside a class
+      # 
+      # _@param_ `dash` — whether a range +-+ came right before it
+      def fold_class_char: (String char, bool dash) -> String
+
+      # Under +/i+, a range between two non-letters (+!-~+) still folds the
+      # letters it covers, which a JavaScript class won't.
+      # 
+      # _@param_ `high` — the range's upper end
+      def check_folded_range: (String high) -> void
+
+      # _@param_ `char` — a class member that isn't a cased letter
+      def class_literal: (String char) -> String
+
+      # _@param_ `char` — the escaped character
+      def escape: (String char) -> void
+
+      # _@param_ `char`
+      def class_escape: (String char) -> void
+
+      # _@param_ `char`
+      # 
+      # _@return_ — the escape as ECMA-262 writes it
+      def shared_escape: (String char) -> String
+
+      # _@param_ `char` — +x+ or +u+
+      # 
+      # _@param_ `body` — the hex digits that must follow
+      def hex_escape: (String char, Regexp body) -> String
+
+      # _@param_ `char`
+      # 
+      # _@param_ `body` — what must follow +\char+
+      def copy_escape: (String char, Regexp body) -> String
+
+      # _@param_ `char` — a literal outside a class
+      def literal: (String char) -> String
+
+      # _@param_ `start` — a position in the output
+      # 
+      # _@return_ — the lowercase letters spelled out as folds
+      # from +start+ on
+      def folded_since: (Integer? start) -> ::Array[String]
+
+      # _@param_ `char` — an ASCII letter
+      # 
+      # _@return_ — every character Ruby's +/i+ matches it with
+      def folds: (String char) -> String
+
+      # _@param_ `char`
+      # 
+      # _@return_ — whether +char+ needs folding under +/i+
+      def cased?: (String char) -> bool
+
+      def take: () -> String?
+
+      def peek: () -> String?
+
+      # _@return_ — never returns
+      def unsupported: () -> void
+
+      # Raised internally when the source has no exact translation.
+      class Unsupported < StandardError
+      end
+    end
+  end
+end
