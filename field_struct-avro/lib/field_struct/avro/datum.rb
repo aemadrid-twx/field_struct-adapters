@@ -141,7 +141,7 @@ module FieldStruct
       end
 
       # A record datum carries no branch name, so it loads as the struct
-      # member whose keys it has. A text string is a +:value+ member's JSON
+      # member whose keys it has. A string is a +:value+ member's JSON
       # when the union has one: only one member can be Avro +string+ (the
       # schema refuses two). Anything else goes to the union as is.
       #
@@ -149,7 +149,7 @@ module FieldStruct
       # @param node [FieldStruct::Introspection::UnionNode]
       # @return [Object]
       def load_union(value, node)
-        if value.is_a?(::String) && value.encoding != Encoding::BINARY
+        if value.is_a?(::String)
           member = node.members.find { |candidate| value_node?(candidate) }
           return member ? load_scalar(value, member) : value
         end
