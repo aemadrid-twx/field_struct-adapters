@@ -61,37 +61,6 @@ module Actionable
     # _@return_ — the block's value
     def self.trace_step: (Actionable::Action _instance, Symbol section, Actionable::Steps::Base step) ?{ () -> Object } -> Object
 
-    # The tracer for the current provider, so a provider installed after
-    # this file loads still applies. Cached per provider: asking the SDK
-    # takes a mutex and allocates on every call. The provider and its
-    # tracer are one frozen pair, so another thread never sees a new
-    # provider next to the old one's tracer.
-    # 
-    # _@return_ — an +OpenTelemetry::Trace::Tracer+
-    def self.tracer: () -> Object
-
-    # _@param_ `span` — the +OpenTelemetry::Trace::Span+
-    # 
-    # _@param_ `error`
-    def self.record_exception: (Object span, Exception error) -> void
-
-    # _@param_ `span` — the +OpenTelemetry::Trace::Span+
-    # 
-    # _@param_ `result`
-    def self.annotate_run: (Object span, Actionable::Result result) -> void
-
-    # _@param_ `instance`
-    # 
-    # _@param_ `span` — the +OpenTelemetry::Trace::Span+
-    # 
-    # _@return_ — the block's value
-    def self.traced_step: (Actionable::Action _instance, Object span) ?{ () -> Object } -> Object
-
-    # _@param_ `action`
-    # 
-    # _@return_ — the class name, or +Actionable::Action+ for an anonymous one
-    def self.label_for: (Class action) -> String
-
     # _@return_ — +:type_only+ or +:full+; see {.exception_details=}
     def self.exception_details: () -> Symbol
 
@@ -122,10 +91,6 @@ module Actionable
     # Prepended onto {Actionable::Runner} so each executed step and hook runs
     # inside its own span (unless {Otel.step_spans=} turned them off).
     module RunnerSteps
-      # _@param_ `section`
-      # 
-      # _@param_ `step`
-      def record: (Symbol section, Actionable::Steps::Base step) -> void
     end
   end
 end
