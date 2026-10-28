@@ -14,3 +14,20 @@ RuboCop::RakeTask.new
 AdapterSigs.define('field_struct-json_schema', libraries: %w[json date bigdecimal time], gems: %w[field_struct])
 
 task default: %i[spec rubocop sigs:check sigs:validate]
+
+desc 'Compare pattern_for against Node: every translated pattern must match exactly what Ruby matches (needs node)'
+task :differential do
+  require 'open3'
+  require 'rbconfig'
+  # The Ruby running rake, so the answers are this Ruby's even under a version shim.
+  results, ruby_status = Open3.capture2(RbConfig.ruby, '-Ilib', 'spec/differential/results.rb')
+  abort 'spec/differential/results.rb failed' unless ruby_status.success?
+
+  begin
+    report, node_status = Open3.capture2('node', 'spec/differential/check.mjs', stdin_data: results)
+  rescue Errno::ENOENT
+    abort 'rake differential needs Node (node on PATH)'
+  end
+  puts report
+  abort 'pattern_for and Node disagree; see above' unless node_status.success?
+end
