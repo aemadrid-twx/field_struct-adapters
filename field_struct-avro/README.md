@@ -58,7 +58,7 @@ FieldStruct::Avro.decode(Billing::Invoice, bytes) == invoice  # => true
 | optional | `["null", T]`, default `null` | with a literal default: `[T, "null"]` and that default |
 | `:array, of: T` | `array` of `["null", T]` | an array of arrays or unions raises: no element type is recorded |
 | nested struct | named `record` (`Billing::Line` → namespace `Billing`, name `Line`) | defined once, then referenced, so recursion works; anonymous ones are `<Record>_<field>` |
-| `:union` | Avro union, `long` before `double` | members landing on one Avro type (string + uuid, string + binary) raise |
+| `:union` | Avro union, `long` before `double` | members landing on one Avro type (string + uuid, string + binary) raise, and so do struct members where an earlier one's required fields are all in a later one: Avro picks a record branch by shape, so the later struct would be written as the earlier |
 | `desc:` | `doc` | |
 | `sensitive:` | `"x-fs-sensitive": true` | the avro gem's parser drops `x-` properties: register the Hash/JSON, not a parsed schema |
 
