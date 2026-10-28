@@ -1,0 +1,16 @@
+# frozen_string_literal: true
+
+source 'https://rubygems.org'
+
+gemspec
+
+# FieldStruct::Introspection is merged to develop (aemadrid-twx/field_struct#23) but unreleased.
+gem 'field_struct', git: 'https://github.com/aemadrid-twx/field_struct', branch: 'develop'
+
+# The specs validate to_json output against generated schemas with an
+# independent validator. Dev only: the generator itself has no dependency.
+gem 'json_schemer', '~> 2.5', require: false
+
+gem 'rake', '~> 13.0'
+gem 'rspec', '~> 3.13'
+gem 'rubocop', '~> 1.60', require: false
