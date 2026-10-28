@@ -68,7 +68,7 @@ module FieldStruct
       end
 
       # @param class_name [String] +"Billing::Invoice"+
-      # @return [Array(String, String)] +["Invoice", "Billing"]+ (+nil+
+      # @return [Array<String, nil>] +["Invoice", "Billing"]+ (+nil+
       #   namespace for a top-level class)
       def split_name(class_name)
         *path, name = class_name.split('::')

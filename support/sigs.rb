@@ -45,6 +45,8 @@ module AdapterSigs
 
       desc "Fail unless #{sig_file} matches a fresh sord run"
       task :check do
+        abort "#{sig_file} doesn't exist yet: run `rake sigs:generate` and commit it." unless File.exist?(sig_file)
+
         Dir.mktmpdir do |dir|
           fresh = File.join(dir, File.basename(sig_file))
           AdapterSigs.generate(sig_file, fresh)

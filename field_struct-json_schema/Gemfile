@@ -17,4 +17,4 @@ gem 'rubocop', '~> 1.60', require: false
 
 # Type signatures: sord generates sig/ from the YARD comments; rbs validates them.
 gem 'rbs', '~> 3.0', require: false
-gem 'sord', '~> 7.0', require: false
+gem 'sord', '~> 7.1.0', require: false # pinned: a new sord can change the output, and sigs:check compares it byte for byte

@@ -99,7 +99,8 @@ module FieldStruct
     # @param klass [Class<FieldStruct::Base>]
     # @param serialization [Symbol]
     # @param timestamp [Symbol]
-    # @return [::Avro::Schema]
+    # @return [Object] an +::Avro::Schema+ (the avro gem ships no signatures,
+    #   so the sig can't name its class)
     def self.parsed_schema(klass, serialization, timestamp)
       ::Avro::Schema.parse(JSON.generate(schema(klass, serialization:, timestamp:)))
     end
@@ -132,21 +133,26 @@ module FieldStruct
         base.extend(ClassMethods)
       end
 
+      # The keyword splats below are named, not anonymous, so sord can type
+      # them from their @param (it drops a @param it can't match to a name).
+      # rubocop:disable Style/ArgumentsForwarding
+
       # @param options [Hash{Symbol=>Object}] see {FieldStruct::Avro.encode}
       # @return [String]
-      def to_avro(**) = FieldStruct::Avro.encode(self, **)
+      def to_avro(**options) = FieldStruct::Avro.encode(self, **options)
 
       # Class methods added by {Methods}.
       module ClassMethods
         # @param options [Hash{Symbol=>Object}] see {FieldStruct::Avro.schema}
         # @return [Hash{String=>Object}]
-        def to_avro_schema(**) = FieldStruct::Avro.schema(self, **)
+        def to_avro_schema(**options) = FieldStruct::Avro.schema(self, **options)
 
         # @param bytes [String]
         # @param options [Hash{Symbol=>Object}] see {FieldStruct::Avro.decode}
         # @return [FieldStruct::Base]
-        def from_avro(bytes, **) = FieldStruct::Avro.decode(self, bytes, **)
+        def from_avro(bytes, **options) = FieldStruct::Avro.decode(self, bytes, **options)
       end
+      # rubocop:enable Style/ArgumentsForwarding
     end
   end
 end

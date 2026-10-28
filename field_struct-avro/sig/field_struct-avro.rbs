@@ -78,7 +78,10 @@ module FieldStruct
     # _@param_ `serialization`
     # 
     # _@param_ `timestamp`
-    def self.parsed_schema: (singleton(FieldStruct::Base) klass, Symbol serialization, Symbol timestamp) -> ::Avro::Schema
+    # 
+    # _@return_ — an +::Avro::Schema+ (the avro gem ships no signatures,
+    # so the sig can't name its class)
+    def self.parsed_schema: (singleton(FieldStruct::Base) klass, Symbol serialization, Symbol timestamp) -> Object
 
     # _@param_ `klass`
     # 
@@ -96,17 +99,17 @@ module FieldStruct
       def self.included: (Class base) -> void
 
       # _@param_ `options` — see {FieldStruct::Avro.encode}
-      def to_avro: () -> String
+      def to_avro: (**::Hash[Symbol, Object] options) -> String
 
       # Class methods added by {Methods}.
       module ClassMethods
         # _@param_ `options` — see {FieldStruct::Avro.schema}
-        def to_avro_schema: () -> ::Hash[String, Object]
+        def to_avro_schema: (**::Hash[Symbol, Object] options) -> ::Hash[String, Object]
 
         # _@param_ `bytes`
         # 
         # _@param_ `options` — see {FieldStruct::Avro.decode}
-        def from_avro: (String bytes) -> FieldStruct::Base
+        def from_avro: (String bytes, **::Hash[Symbol, Object] options) -> FieldStruct::Base
       end
     end
 
@@ -226,7 +229,7 @@ module FieldStruct
       # 
       # _@return_ — +["Invoice", "Billing"]+ (+nil+
       # namespace for a top-level class)
-      def split_name: (String class_name) -> [String, String]
+      def split_name: (String class_name) -> ::Array[String?]
 
       # _@param_ `property`
       # 
