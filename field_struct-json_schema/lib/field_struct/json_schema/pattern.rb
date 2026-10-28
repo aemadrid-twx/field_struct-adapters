@@ -78,7 +78,7 @@ module FieldStruct
 
       # @return [String, nil] the ECMA-262 pattern, or +nil+ when there is no
       #   exact translation
-      def to_s
+      def translate
         unsupported if @fold_case && (@source.match?(MULTI_FOLD) || !@source.ascii_only?)
         @out = +''
         @pos = 0

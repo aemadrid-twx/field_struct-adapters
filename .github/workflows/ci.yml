@@ -13,6 +13,10 @@ on:
     - cron: '17 9 * * *'
   workflow_dispatch:
 
+# CI only reads the repo; PR code runs here, so its token gets no write scope.
+permissions:
+  contents: read
+
 jobs:
   # The files outside the gems: the root Rakefile and support/ (the README
   # doctest helper the gems' specs share).
