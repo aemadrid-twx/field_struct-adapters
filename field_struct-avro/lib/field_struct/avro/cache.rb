@@ -166,6 +166,7 @@ module FieldStruct
         # Stamped before reading, so a change made meanwhile is seen next time.
         stamp = Cache.stamp(klass, serialization)
         list = Introspection.properties(klass, serialization:).freeze
+        list.each { |property| Options.check_shape(property, "#{klass.inspect}##{property.field.name}") }
         @lock.synchronize { @properties[key] = Properties.new(list, stamp) }
         list
       end

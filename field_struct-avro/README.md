@@ -78,7 +78,7 @@ end
 error.start_with?("FieldStruct::Avro can't read these bytes: total: written as decimal (scale 3)") # => true
 ```
 
-`schema` builds and parses the schema, so a field option the avro gem can't parse raises there, naming the class, instead of at the first `encode`. Call it at boot, or in a test, for each root class with the options you use (`serialization:`, `timestamp:`), to find those early. A nested struct is covered by its root:
+`schema` builds and parses the schema, so a field option the avro gem can't parse raises there, naming the class, instead of at the first `encode`. Call it at boot, or in a test, for each root class with the options you use (`serialization:`, `timestamp:`), to find those early. A nested struct is covered by its root. An `avro:` option that isn't a Hash raises too, as does a `serialization:` that no struct in the tree declares with `serialize` (`:avro`, the default, needs none):
 
 <!-- doctest -->
 ```ruby
