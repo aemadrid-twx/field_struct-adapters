@@ -83,7 +83,11 @@ module FieldStruct
         @out = +''
         @pos = 0
         @in_class = false
-        @groups = [] # [:plain or :lookaround, where it starts in @out], per open group
+        # [:plain or :lookaround, where it starts in @out, whether it repeats
+        # something inside], per open group
+        @groups = []
+        # Whether the last atom is a group that repeats something inside.
+        @repeating_group = false
         # Where the last quantifiable atom starts in @out, and the atom before it.
         @atom_start = nil
         @prev_start = nil
@@ -139,6 +143,7 @@ module FieldStruct
       def atom
         @prev_start = @atom_start
         @atom_start = @out.length
+        @repeating_group = false
         yield
         @quantifiable = true
         @quantified = false
@@ -164,8 +169,25 @@ module FieldStruct
         end
         # Stacked (a**), possessive (a*+) or on an anchor or lookaround.
         unsupported if !@quantifiable || @quantified
+        repeats(more_than_once: char != '?', variable: true)
         @out << char
         @quantified = :lazy_ok
+      end
+
+      # A quantifier on the last atom. Repeating a
+      # group that holds a variable repeat, like +(a+)++ or +(\w*x){20}+,
+      # lets a backtracking engine split one input exponentially many ways:
+      # Ruby's memoization hides it, but a JavaScript validator would hang
+      # on a crafted input. So those get no pattern. An exact count
+      # (+(\d{3}-){2}+) splits only one way, so it doesn't mark its group.
+      #
+      # @param more_than_once [Boolean] whether it can repeat the atom
+      # @param variable [Boolean] whether the count varies (+?+, +*+, +++,
+      #   +{n,m}+), which marks the enclosing group
+      # @return [void]
+      def repeats(more_than_once:, variable:)
+        unsupported if more_than_once && @repeating_group
+        @groups.last[2] = true if variable && !@groups.empty?
       end
 
       # @return [void]
@@ -180,6 +202,13 @@ module FieldStruct
         unsupported if !@quantifiable || @quantified
         # Under /i Ruby repeats a one-letter atom into a string: "s{2}" matches "ß".
         unsupported if body.to_i >= 2 && folded_since(@atom_start).intersect?(%w[s f])
+        low, comma, high = body.delete('}').partition(',')
+        most = if comma.empty?
+                 low.to_i
+               else
+                 high.empty? ? Float::INFINITY : high.to_i
+               end
+        repeats(more_than_once: most > 1, variable: !comma.empty? && most != low.to_i)
         @pos += body.length
         @out << '{' << body
         # "{n}?" is an optional {n} in Ruby but a lazy {n} in JavaScript, so
@@ -204,7 +233,8 @@ module FieldStruct
           else unsupported
           end
         end
-        @groups.push([kind, start])
+        @groups.push([kind, start, false])
+        @repeating_group = false
         @quantifiable = false
         @quantified = false
       end
@@ -226,10 +256,12 @@ module FieldStruct
 
       # @return [void]
       def close_group
-        kind, start = @groups.pop || unsupported
+        kind, start, repeating = @groups.pop || unsupported
         @out << ')'
+        @groups.last[2] = true if repeating && !@groups.empty?
         @quantifiable = kind == :plain
         @atom_start = @quantifiable ? start : nil
+        @repeating_group = @quantifiable && repeating
         @quantified = false
       end
 
@@ -273,6 +305,7 @@ module FieldStruct
         letter = @source[@class_source...(@pos - 1)][/\A([A-Za-z])(?:-\1)?\z/, 1]
         @folded[@atom_start] = [letter.downcase] if @fold_case && letter && !@class_negated
         @out << ']'
+        @repeating_group = false
         @quantifiable = true
         @quantified = false
       end
