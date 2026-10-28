@@ -64,6 +64,15 @@ RSpec.describe FieldStruct::Avro, 'encode and decode' do
     tick = klass.new(at: '2026-10-25T21:55:12.123456789-06:00')
 
     expect { described_class.encode(tick) }.to raise_error(ArgumentError, /more precision than timestamp-micros/)
+    pair = struct('Pair') do
+      required :created, :time
+      required :updated, :array, of: :time
+    end
+    late = pair.new(created: '2026-10-25T21:55:12Z', updated: ['2026-10-25T21:55:12.123456789Z'])
+    expect { described_class.to_datum(late) }
+      .to raise_error(ArgumentError, /\AFieldStruct::Avro: Pair#updated is 2026-10-25T21:55:12\.123456789Z?.*, which has more precision than timestamp-micros/)
+    holder = struct('Holder') { required :pair, pair }
+    expect { described_class.to_datum(holder.new(pair: late)) }.to raise_error(ArgumentError, /\AFieldStruct::Avro: Pair#updated is/)
     expect(round_trip(tick, timestamp: :nanos).at.nsec).to eq(123_456_789)
   end
 
