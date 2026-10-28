@@ -24,7 +24,7 @@ module FieldStruct
       # @return [Hash{String=>Object}]
       def dump(struct)
         Introspection.properties(struct.class, serialization: @serialization).to_h do |property|
-          [property.key, dump_value(struct.public_send(property.field.name), property.node)]
+          [property.key, dump_value(struct.public_send(property.field.name), property.node, field_avro(property))]
         end
       end
 
@@ -33,7 +33,7 @@ module FieldStruct
       # @return [FieldStruct::Base]
       def load(klass, datum)
         attributes = Introspection.properties(klass, serialization: @serialization).to_h do |property|
-          [property.field.name, load_value(datum[property.key], property.node)]
+          [property.field.name, load_value(datum[property.key], property.node, field_avro(property))]
         end
         klass.new(attributes)
       end
@@ -43,16 +43,17 @@ module FieldStruct
       # @param value [Object]
       # @param node [FieldStruct::Introspection::ScalarNode, FieldStruct::Introspection::ArrayNode,
       #   FieldStruct::Introspection::UnionNode, FieldStruct::Introspection::StructNode]
+      # @param avro [Hash{Symbol=>Object}] the +avro:+ options that apply
       # @return [Object]
-      def dump_value(value, node)
+      def dump_value(value, node, avro)
         return nil if value.nil?
-        return raw(value) if override?(node)
+        return raw(value) if override?(node, avro)
 
         case node
-        when Introspection::ArrayNode then value.map { |item| dump_value(item, node.element) }
+        when Introspection::ArrayNode then value.map { |item| dump_value(item, node.element, nested(avro, node.element)) }
         when Introspection::StructNode then dump(value)
-        when Introspection::UnionNode then dump_union(value, node)
-        else dump_scalar(value, node)
+        when Introspection::UnionNode then dump_union(value, node, avro)
+        else dump_scalar(value, node, avro)
         end
       end
 
@@ -61,11 +62,12 @@ module FieldStruct
       #
       # @param value [Object]
       # @param node [FieldStruct::Introspection::UnionNode]
+      # @param avro [Hash{Symbol=>Object}]
       # @return [Object]
-      def dump_union(value, node)
+      def dump_union(value, node, avro)
         ordered = node.members.sort_by.with_index { |candidate, index| [value_node?(candidate) ? 1 : 0, index] }
         member = ordered.find { |candidate| member_of?(value, candidate) }
-        member ? dump_value(value, member) : value
+        member ? dump_value(value, member, nested(avro, member)) : value
       end
 
       # @param node [Object]
@@ -88,12 +90,13 @@ module FieldStruct
 
       # @param value [Object]
       # @param node [FieldStruct::Introspection::ScalarNode]
+      # @param avro [Hash{Symbol=>Object}]
       # @return [Object]
-      def dump_scalar(value, node)
+      def dump_scalar(value, node, avro)
         case node.type
-        when FieldStruct::Types::BigDecimal then decimal?(node) ? value : value.to_s('F')
-        when FieldStruct::Types::Time then exact_time(value, node)
-        when FieldStruct::Types::DateTime then exact_time(value.to_time, node)
+        when FieldStruct::Types::BigDecimal then decimal?(node, avro) ? value : value.to_s('F')
+        when FieldStruct::Types::Time then exact_time(value, avro)
+        when FieldStruct::Types::DateTime then exact_time(value.to_time, avro)
         when FieldStruct::Types::Symbol then value.to_s
         when FieldStruct::Types::Value then Oj.dump(value, mode: :compat)
         else value
@@ -101,22 +104,41 @@ module FieldStruct
       end
 
       # @param node [FieldStruct::Introspection::ScalarNode]
+      # @param avro [Hash{Symbol=>Object}]
       # @return [Boolean] whether the decimal travels as an Avro decimal
-      def decimal?(node)
-        avro = avro_options(node)
+      def decimal?(node, avro)
         !avro.fetch(:scale) { node.options.fetch(:round) { node.type.class.default_round } }.nil?
       end
 
       # @param time [::Time]
-      # @param node [FieldStruct::Introspection::ScalarNode]
+      # @param avro [Hash{Symbol=>Object}]
       # @return [::Time]
       # @raise [ArgumentError] when the precision would drop part of +time+
-      def exact_time(time, node)
-        precision = avro_options(node).fetch(:timestamp, @timestamp)
+      def exact_time(time, avro)
+        precision = avro.fetch(:timestamp, @timestamp)
         return time if (time.nsec % NANOS.fetch(precision)).zero?
 
         raise ArgumentError, "FieldStruct::Avro: #{time.iso8601(9)} has more precision than timestamp-#{precision}; " \
                              'round it, or use timestamp: :nanos'
+      end
+
+      # @param property [FieldStruct::Introspection::Property]
+      # @return [Hash{Symbol=>Object}] the field's +avro:+ option, whatever
+      #   its node (a struct or union node carries no options of its own)
+      def field_avro(property)
+        options = property.field.options[:avro]
+        options.is_a?(::Hash) ? options : {}
+      end
+
+      # An array's elements and a union's members take the field's +avro:+
+      # options, under any of their own, except +:type+, which replaces only
+      # the field it was given on.
+      #
+      # @param avro [Hash{Symbol=>Object}] the enclosing node's options
+      # @param node [Object]
+      # @return [Hash{Symbol=>Object}]
+      def nested(avro, node)
+        avro.except(:type).merge(avro_options(node))
       end
 
       # @param node [Object]
@@ -130,9 +152,9 @@ module FieldStruct
       # Avro type, so the value travels as field_struct holds it.
       #
       # @param node [Object]
+      # @param avro [Hash{Symbol=>Object}]
       # @return [Boolean]
-      def override?(node)
-        avro = avro_options(node)
+      def override?(node, avro)
         return false unless avro.key?(:type)
 
         # A :value overridden to (nullable) string still holds JSON text.
@@ -152,16 +174,18 @@ module FieldStruct
       end
 
       # The Avro type is the user's, but what {#raw} dumped comes back the
-      # same way: structs in an array through their own mappings, a time in
-      # its zone:.
+      # same way: structs through their own mappings, a time in its zone:.
       #
       # @param value [Object]
-      # @param node [FieldStruct::Introspection::ScalarNode, FieldStruct::Introspection::ArrayNode]
+      # @param node [FieldStruct::Introspection::ScalarNode, FieldStruct::Introspection::ArrayNode,
+      #   FieldStruct::Introspection::UnionNode, FieldStruct::Introspection::StructNode]
       # @return [Object]
       def load_override(value, node)
-        if node.is_a?(Introspection::ArrayNode) && node.element.is_a?(Introspection::StructNode) && value.is_a?(::Array)
+        if node.is_a?(Introspection::StructNode) && value.is_a?(::Hash)
+          load(node.klass, value)
+        elsif node.is_a?(Introspection::ArrayNode) && node.element.is_a?(Introspection::StructNode) && value.is_a?(::Array)
           value.map { |item| item.is_a?(::Hash) ? load(node.element.klass, item) : item }
-        elsif value.is_a?(::Time)
+        elsif value.is_a?(::Time) && node.respond_to?(:options)
           rezone(value, node.options[:zone])
         else
           value
@@ -171,13 +195,14 @@ module FieldStruct
       # @param value [Object]
       # @param node [FieldStruct::Introspection::ScalarNode, FieldStruct::Introspection::ArrayNode,
       #   FieldStruct::Introspection::UnionNode, FieldStruct::Introspection::StructNode]
+      # @param avro [Hash{Symbol=>Object}] the +avro:+ options that apply
       # @return [Object]
-      def load_value(value, node)
+      def load_value(value, node, avro)
         return nil if value.nil?
-        return load_override(value, node) if override?(node)
+        return load_override(value, node) if override?(node, avro)
 
         case node
-        when Introspection::ArrayNode then value.map { |item| load_value(item, node.element) }
+        when Introspection::ArrayNode then value.map { |item| load_value(item, node.element, nested(avro, node.element)) }
         when Introspection::StructNode then load(node.klass, value)
         when Introspection::UnionNode then load_union(value, node)
         else load_scalar(value, node)
