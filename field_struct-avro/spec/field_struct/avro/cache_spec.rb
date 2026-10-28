@@ -96,6 +96,18 @@ RSpec.describe FieldStruct::Avro::Cache do
     expect(FieldStruct::Avro.decode(box, bytes, writer_schema: old)).to have_attributes(extra: 7, later: Date.new(2020, 1, 1))
   end
 
+  it 'keeps the properties Datum walks, and picks up a field or serialize added later' do
+    first = FieldStruct::Avro::CACHE.properties(box, :avro)
+    expect(FieldStruct::Avro::CACHE.properties(box, :avro)).to be(first)
+
+    box.optional :note, :string
+    expect(FieldStruct::Avro.to_datum(box.new(id: 1, part: {sku: 'a'}, note: 'x'))).to include('note' => 'x')
+    box.serialize :avro, note: 'noteText'
+    expect(FieldStruct::Avro.to_datum(box.new(id: 1, part: {sku: 'a'}, note: 'x'))).to include('noteText' => 'x')
+    part.optional :qty, :integer
+    expect(FieldStruct::Avro.from_datum(box, {'id' => 1, 'part' => {'sku' => 'a', 'qty' => 2}, 'noteText' => nil}).part.qty).to eq(2)
+  end
+
   it 'agrees across threads' do
     value = box.new(id: 1, part: {sku: 'a'})
 

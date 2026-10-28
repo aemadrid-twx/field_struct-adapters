@@ -12,6 +12,8 @@ module FieldStruct
       NANOS = {nanos: 1, micros: 1_000, millis: 1_000_000}.freeze
       # @return [Hash{Symbol=>Object}]
       JSON_LOAD = {mode: :compat, decimal_class: ::BigDecimal}.freeze
+      # @return [Hash{Symbol=>Object}] no +avro:+ options
+      NONE = {}.freeze
 
       # @param serialization [Symbol]
       # @param timestamp [Symbol]
@@ -27,7 +29,7 @@ module FieldStruct
       # @param struct [FieldStruct::Base]
       # @return [Hash{String=>Object}]
       def dump(struct)
-        Introspection.properties(struct.class, serialization: @serialization).to_h do |property|
+        properties(struct.class).to_h do |property|
           [property.key, dump_value(struct.public_send(property.field.name), property.node, field_avro(property))]
         end
       end
@@ -36,12 +38,19 @@ module FieldStruct
       # @param datum [Hash{String=>Object}]
       # @return [FieldStruct::Base]
       def load(klass, datum)
-        absent = @absent.fetch(klass, [])
-        properties = Introspection.properties(klass, serialization: @serialization).reject { |property| absent.include?(property.key) }
+        absent = @absent.fetch(klass, nil)
+        properties = properties(klass)
+        properties = properties.reject { |property| absent.include?(property.key) } if absent && !absent.empty?
         klass.new(properties.to_h { |property| [property.field.name, load_value(datum[property.key], property.node, field_avro(property))] })
       end
 
       private
+
+      # @param klass [Class<FieldStruct::Base>]
+      # @return [Array<FieldStruct::Introspection::Property>]
+      def properties(klass)
+        CACHE.properties(klass, @serialization)
+      end
 
       # @param value [Object]
       # @param node [FieldStruct::Introspection::ScalarNode, FieldStruct::Introspection::ArrayNode,
@@ -53,7 +62,10 @@ module FieldStruct
         return raw(value) if override?(node, avro)
 
         case node
-        when Introspection::ArrayNode then value.map { |item| dump_value(item, node.element, nested(avro, node.element)) }
+        when Introspection::ArrayNode
+          element = node.element
+          element_avro = nested(avro, element)
+          value.map { |item| dump_value(item, element, element_avro) }
         when Introspection::StructNode then dump(value)
         when Introspection::UnionNode then dump_union(value, node, avro)
         else dump_scalar(value, node, avro)
@@ -148,7 +160,7 @@ module FieldStruct
       #   its node (a struct or union node carries no options of its own)
       def field_avro(property)
         options = property.field.options[:avro]
-        options.is_a?(::Hash) ? options : {}
+        options.is_a?(::Hash) ? options : NONE
       end
 
       # An array's elements and a union's members take the field's +avro:+
@@ -159,14 +171,17 @@ module FieldStruct
       # @param node [Object]
       # @return [Hash{Symbol=>Object}]
       def nested(avro, node)
-        avro.except(:type).merge(avro_options(node))
+        own = avro_options(node)
+        return avro if own.empty? && !avro.key?(:type)
+
+        avro.except(:type).merge(own)
       end
 
       # @param node [Object]
       # @return [Hash{Symbol=>Object}]
       def avro_options(node)
         options = node.respond_to?(:options) ? node.options[:avro] : nil
-        options.is_a?(::Hash) ? options : {}
+        options.is_a?(::Hash) ? options : NONE
       end
 
       # A field whose +avro: {type:}+ replaces its mapping: the user chose the
@@ -223,7 +238,10 @@ module FieldStruct
         return load_override(value, node) if override?(node, avro)
 
         case node
-        when Introspection::ArrayNode then value.map { |item| load_value(item, node.element, nested(avro, node.element)) }
+        when Introspection::ArrayNode
+          element = node.element
+          element_avro = nested(avro, element)
+          value.map { |item| load_value(item, element, element_avro) }
         when Introspection::StructNode then load(node.klass, value)
         when Introspection::UnionNode then load_union(value, node)
         else load_scalar(value, node)
@@ -247,7 +265,7 @@ module FieldStruct
 
         member = node.members.find do |candidate|
           candidate.is_a?(Introspection::StructNode) &&
-            Introspection.properties(candidate.klass, serialization: @serialization).map(&:key).sort == value.keys.sort
+            properties(candidate.klass).map(&:key).sort == value.keys.sort
         end
         member ? load(member.klass, value) : value
       end
