@@ -178,8 +178,10 @@ module FieldStruct
       # group that holds a variable repeat, like +(a+)++ or +(\w*x){20}+,
       # lets a backtracking engine split one input exponentially many ways:
       # Ruby's memoization hides it, but a JavaScript validator would hang
-      # on a crafted input. So those get no pattern. An exact count
-      # (+(\d{3}-){2}+) splits only one way, so it doesn't mark its group.
+      # on a crafted input. So those get no pattern. An exact count over a
+      # plain atom (+(\d{3}-){2}+) splits only one way, so it doesn't mark
+      # its group. (One over an alternation, +(a|aa){2}+, can split many
+      # ways; overlapping alternation isn't caught yet.)
       #
       # @param more_than_once [Boolean] whether it can repeat the atom
       # @param variable [Boolean] whether the count varies (+?+, +*+, +++,
