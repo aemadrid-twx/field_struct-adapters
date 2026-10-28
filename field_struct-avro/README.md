@@ -57,7 +57,7 @@ FieldStruct::Avro.decode(Billing::Invoice, bytes) == invoice  # => true
 | `:value` | `string` holding JSON | |
 | optional | `["null", T]`, default `null` | with a literal default: `[T, "null"]` and that default |
 | `:array, of: T` | `array` of `["null", T]` | an array of arrays or unions raises: no element type is recorded |
-| nested struct | named `record` (`Billing::Line` → namespace `Billing`, name `Line`) | defined once, then referenced, so recursion works; anonymous ones are `<Record>_<field>` |
+| nested struct | named `record` (`Billing::Line` → namespace `Billing`, name `Line`) | defined once, then referenced, so recursion works; anonymous ones are `<Record>_<field>`. A class with no module takes the namespace of the record it first appears in, as Avro gives it (`Line` inside `Billing::Invoice` is `Billing.Line`), and raises where Avro can't name it |
 | `:union` | Avro union, `long` before `double` | members landing on one Avro type (string + uuid, string + binary) raise |
 | `desc:` | `doc` | |
 | `sensitive:` | `"x-fs-sensitive": true` | the avro gem's parser drops `x-` properties: register the Hash/JSON, not a parsed schema |
