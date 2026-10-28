@@ -85,4 +85,4 @@ These follow field_struct's own validation, so the schema accepts exactly what t
 
 `bundle exec rake` runs the specs and RuboCop. The specs validate real `to_json` output against generated schemas with an independent validator (json_schemer, dev only).
 
-`bundle exec rake differential` (needs Node) checks the translation itself. It runs 588 Regexps from `spec/differential/corpus.json` through `pattern_for`, computes Ruby's answer for each of their samples on the Ruby you're running, and checks that Node's `u`-flag RegExp gives the same answer for every one. CI runs it on Ruby 3.3 and 4.0. When a bug report shows a Regexp that translates wrongly, add it to the corpus with the strings that disagree.
+`bundle exec rake differential` (needs Node) checks the translation itself. It runs every Regexp in `spec/differential/corpus.json` (about 600) through `pattern_for`, computes Ruby's answer for each of their samples on the Ruby you're running, and checks that Node's `u`-flag RegExp gives the same answer for every one. CI runs it on Ruby 3.3 and 4.0. When a bug report shows a Regexp that translates wrongly, add it to the corpus with the strings that disagree.
