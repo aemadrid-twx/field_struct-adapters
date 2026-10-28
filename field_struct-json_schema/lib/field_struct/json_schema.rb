@@ -40,7 +40,8 @@ module FieldStruct
   #   field with a default may be left out of the input. Optional fields
   #   accept +null+, and so does every array element (validation skips
   #   +nil+ elements). An optional String-family field with +enum:+ or a
-  #   +format:+ also accepts a blank string, which counts as missing there.
+  #   +format:+ also accepts a blank string, which counts as missing there
+  #   (for +:binary+, only an empty one).
   # * **Constraints** map where JSON Schema has a keyword: +enum:+ → +enum+,
   #   an +in:+ Range → +minimum+ / +maximum+ / +exclusiveMaximum+ (an
   #   infinite end is left open), an +in:+ Array → +enum+, a Regexp
@@ -82,6 +83,11 @@ module FieldStruct
     # @return [Hash{String=>String}]
     BLANK_STRING = {'type' => 'string', 'pattern' => '^[\x00\t\n\v\f\r ]*$'}.freeze
 
+    # The same for a type where only an empty string is missing (+:binary+):
+    # a blank one is a value there, and must match.
+    # @return [Hash{String=>Object}]
+    EMPTY_STRING = {'type' => 'string', 'maxLength' => 0}.freeze
+
     # Regexp options JSON Schema's +pattern+ can't carry (+/i+ is folded into
     # the pattern instead).
     # @return [Integer]
@@ -97,7 +103,9 @@ module FieldStruct
     # @return [Hash{String=>Object}] the schema, with String keys, ready for
     #   +Oj.dump+. It's a fresh copy: changing it doesn't touch the class.
     # @raise [ArgumentError] when +klass+ is not a {FieldStruct::Base}
-    #   subclass, or +serialization+ is not a Symbol or String
+    #   subclass, +serialization+ is not a Symbol or String, an anonymous
+    #   struct nests itself, or a +json_schema:+ option (or a type's
+    #   +json_schema+) is neither a Hash nor a boolean
     def self.generate(klass, serialization: :json)
       unless klass.is_a?(::Class) && klass < FieldStruct::Base
         raise ArgumentError,
@@ -282,7 +290,7 @@ module FieldStruct
         required = []
         Introspection.properties(klass, serialization: @serialization).each do |property|
           field = property.field
-          properties[property.key] = property_schema(property)
+          properties[property.key] = property_schema(property, klass)
           required << property.key if field.required? && field.default.nil?
         end
         out = {'type' => 'object', 'properties' => properties}
@@ -292,16 +300,21 @@ module FieldStruct
       end
 
       # @param property [FieldStruct::Introspection::Property]
+      # @param klass [Class<FieldStruct::Base>] the struct it belongs to, for errors
       # @return [Hash{String=>Object}]
-      def property_schema(property)
+      def property_schema(property, klass)
         field = property.field
-        schema = override(field.options[:json_schema]) || node_schema(property.node)
+        option = field.options[:json_schema]
+        schema = override(option) { "the json_schema: option of #{klass.name || klass.inspect}##{field.name}" } ||
+          node_schema(property.node)
         annotations(field).merge(field.required? ? schema : optional(schema, field.type_instance))
       end
 
       # An optional field's schema: +null+ too (an override describes a
-      # present value, so it gets +null+ like any other), plus a blank string
-      # when the field is String-family and its schema would refuse one.
+      # present value, so it gets +null+ like any other), plus the strings
+      # the struct treats as missing (a blank one, or for +:binary+ only an
+      # empty one) when the field is String-family and its schema would
+      # refuse them.
       #
       # @param schema [Hash{String=>Object}]
       # @param type [FieldStruct::Types::Base]
@@ -310,7 +323,10 @@ module FieldStruct
         schema = nullable(schema)
         return schema unless type.is_a?(FieldStruct::Types::String) && schema.keys.intersect?(%w[enum pattern format])
 
-        {'anyOf' => [schema, BLANK_STRING]}
+        if type.missing?(' ') then {'anyOf' => [schema, BLANK_STRING]}
+        elsif type.missing?('') then {'anyOf' => [schema, EMPTY_STRING]}
+        else schema
+        end
       end
 
       # @param field [FieldStruct::Field]
@@ -362,7 +378,7 @@ module FieldStruct
       def node_schema(node)
         hook = node.type.respond_to?(:json_schema)
         @hooked ||= hook
-        override(hook ? node.type.json_schema : nil) ||
+        override(hook ? node.type.json_schema : nil) { "#{node.type.class.name || node.type.class.inspect}#json_schema" } ||
           case node
           when Introspection::ArrayNode then array_schema(node)
           when Introspection::UnionNode then union_schema(node)
@@ -408,7 +424,10 @@ module FieldStruct
       # @return [Hash{String=>Object}]
       # @raise [ArgumentError] when the anonymous struct nests itself
       def inline(klass)
-        raise ArgumentError, 'FieldStruct::JSONSchema cannot describe a recursive anonymous struct; assign it to a constant' if @inlining.include?(klass)
+        if @inlining.include?(klass)
+          raise ArgumentError, "FieldStruct::JSONSchema.generate(#{@root.name || @root.inspect}) cannot describe a recursive " \
+                               'anonymous struct; assign it to a constant'
+        end
 
         @inlining.push(klass)
         object_schema(klass)
@@ -514,6 +533,7 @@ module FieldStruct
       # as a Hash: the boolean schemas become their object forms.
       #
       # @param value [Hash{String=>Object}, Boolean, nil]
+      # @yieldreturn [String] where +value+ came from, for the error
       # @return [Hash{String=>Object}, nil]
       # @raise [ArgumentError] for anything else
       def override(value)
@@ -521,7 +541,8 @@ module FieldStruct
         when nil, ::Hash then value
         when true then {}
         when false then {'not' => {}}
-        else raise ArgumentError, "json_schema: must be a Hash or a boolean, got #{value.inspect}"
+        else
+          raise ArgumentError, "FieldStruct::JSONSchema.generate: #{yield} must be a Hash or a boolean, got #{value.inspect}"
         end
       end
 
