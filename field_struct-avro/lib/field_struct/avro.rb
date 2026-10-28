@@ -96,7 +96,8 @@ module FieldStruct
     # @param serialization [Symbol, String]
     # @param timestamp [Symbol]
     # @return [FieldStruct::Base]
-    # @raise [ArgumentError] as {.schema} does, and when the avro gem would
+    # @raise [ArgumentError] as {.schema} does, for bytes the avro gem can't
+    #   read or a +writer_schema:+ it can't parse, and when the avro gem would
     #   read a field as the wrong value or fail to read it (see {Resolution})
     def self.decode(klass, bytes, writer_schema: nil, serialization: :avro, timestamp: :micros)
       serialization = check(klass, serialization, timestamp)
@@ -105,9 +106,29 @@ module FieldStruct
       # A field the writer lacked takes field_struct's own default, which
       # the Avro default can't always express (a date, a decimal, a proc).
       writer, skip = writer_schema ? CACHE.writer(writer_schema, entry) : [reader, {}]
-      datum = ::Avro::IO::DatumReader.new(writer, reader).read(::Avro::IO::BinaryDecoder.new(StringIO.new(bytes)))
+      datum = read(klass, bytes, writer, reader)
       Datum.new(serialization:, absent: skip).load(klass, datum)
     end
+
+    # The avro gem reads bytes that end early or don't match the writer
+    # schema into whatever error its reader trips on (EOFError,
+    # NoMethodError, a SchemaMatchException); this names the class instead.
+    # The message leaves the avro gem's text out, which can quote values;
+    # it stays on the error's +cause+.
+    #
+    # @param klass [Class<FieldStruct::Base>]
+    # @param bytes [String]
+    # @param writer [Object] an +::Avro::Schema+
+    # @param reader [Object] an +::Avro::Schema+
+    # @return [Hash{String=>Object}] the datum
+    # @raise [ArgumentError]
+    def self.read(klass, bytes, writer, reader)
+      ::Avro::IO::DatumReader.new(writer, reader).read(::Avro::IO::BinaryDecoder.new(StringIO.new(bytes)))
+    rescue EOFError, NoMethodError, TypeError, RangeError, ::Avro::AvroError => e
+      raise ArgumentError, "FieldStruct::Avro can't decode these bytes as #{klass} (#{e.class}): they end early, " \
+                           "or weren't written with the writer schema given (pass writer_schema: for bytes from an older one)"
+    end
+    private_class_method :read
 
     # @param klass [Object]
     # @param serialization [Object]
