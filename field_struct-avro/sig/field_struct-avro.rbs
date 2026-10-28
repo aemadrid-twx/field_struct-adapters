@@ -223,6 +223,10 @@ module FieldStruct
 
       def schema: () -> ::Hash[String, Object]
 
+      # A class with no module of its own takes the namespace of the record
+      # it is first defined in, as Avro would give it, and is written with
+      # that namespace and referred to by that full name everywhere after.
+      # 
       # _@param_ `klass`
       # 
       # _@param_ `anonymous_name` — the name for an anonymous struct
@@ -232,6 +236,13 @@ module FieldStruct
       # _@return_ — the record, or its full name
       # when it is already defined
       def record: (singleton(FieldStruct::Base) klass, String? anonymous_name, String? namespace) -> (::Hash[String, Object] | String)
+
+      # _@param_ `klass` — a class already defined in this schema
+      # 
+      # _@param_ `namespace` — the namespace the reference sits in
+      # 
+      # _@return_ — its full name
+      def reference: (singleton(FieldStruct::Base) klass, String? namespace) -> String
 
       # _@param_ `class_name` — +"Billing::Invoice"+
       # 
