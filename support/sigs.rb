@@ -33,10 +33,8 @@ module AdapterSigs
   # @param gem_name [String] the gem, and the basename of its sig file
   # @param libraries [Array<String>] stdlib signatures to load (+rbs -r+)
   # @param gems [Array<String>] gems whose own sig/ to load (+rbs -I+)
-  # @param extra [Array<String>] directories of dev-only signatures, for
-  #   dependencies that ship none
   # @return [void]
-  def define(gem_name, libraries: [], gems: [], extra: [])
+  def define(gem_name, libraries: [], gems: [])
     sig_file = "sig/#{gem_name}.rbs"
 
     namespace :sigs do
@@ -61,7 +59,6 @@ module AdapterSigs
       task :validate do
         args = libraries.flat_map { |library| ['-r', library] }
         args += gems.flat_map { |name| ['-I', File.join(Gem.loaded_specs.fetch(name).full_gem_path, 'sig')] }
-        args += extra.flat_map { |dir| ['-I', dir] }
         sh 'bundle', 'exec', 'rbs', *args, '-I', 'sig', 'validate'
       end
     end
@@ -74,6 +71,7 @@ module AdapterSigs
   # @param target [String]
   # @return [void]
   def generate(sig_file, target)
+    FileUtils.mkdir_p(File.dirname(target))
     aside = "#{sig_file}.aside"
     File.rename(sig_file, aside) if File.exist?(sig_file)
     FileUtils.rm_rf('.yardoc')

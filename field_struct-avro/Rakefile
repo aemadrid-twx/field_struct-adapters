@@ -11,6 +11,6 @@ Bundler::GemHelper.tag_prefix = 'field_struct-avro/'
 RSpec::Core::RakeTask.new(:spec)
 RuboCop::RakeTask.new
 
-AdapterSigs.define('field_struct-avro', libraries: %w[json date bigdecimal time], gems: %w[field_struct], extra: %w[sig-deps])
+AdapterSigs.define('field_struct-avro', libraries: %w[json date bigdecimal time], gems: %w[field_struct])
 
 task default: %i[spec rubocop sigs:check sigs:validate]

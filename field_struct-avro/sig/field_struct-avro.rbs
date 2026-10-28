@@ -229,7 +229,7 @@ module FieldStruct
       # 
       # _@return_ — +["Invoice", "Billing"]+ (+nil+
       # namespace for a top-level class)
-      def split_name: (String class_name) -> ::Array[String?]
+      def split_name: (String class_name) -> ([String, String] | [String, NilClass])
 
       # _@param_ `property`
       # 
