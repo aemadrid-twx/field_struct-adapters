@@ -72,8 +72,10 @@ RSpec.describe FieldStruct::Avro, 'encode and decode' do
       required :starts, :time, zone: 'America/Denver'
       required :ends, :time, zone: '-03:00'
       required :plain, :time
+      required :utc, :time, zone: 'UTC'
     end
-    shift = klass.new(starts: '2026-07-01 08:00', ends: '2026-07-01T18:00:00Z', plain: '2026-07-01T18:00:00+02:00')
+    shift = klass.new(starts: '2026-07-01 08:00', ends: '2026-07-01T18:00:00Z', plain: '2026-07-01T18:00:00+02:00',
+      utc: '2026-07-01 08:00:00')
 
     back = round_trip(shift)
 
@@ -81,6 +83,7 @@ RSpec.describe FieldStruct::Avro, 'encode and decode' do
     expect(back.starts.utc_offset).to eq(-6 * 3600)
     expect(back.ends.utc_offset).to eq(-3 * 3600)
     expect(back.plain.utc_offset).to eq(0) # no zone: to put back, so UTC
+    expect([back.utc.utc?, back.utc.iso8601]).to eq([true, '2026-07-01T08:00:00Z']) # as field_struct gives it, so JSON keeps the Z
   end
 
   it 'raises rather than truncate a decimal or an integer that does not fit' do

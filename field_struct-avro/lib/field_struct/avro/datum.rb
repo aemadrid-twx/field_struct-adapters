@@ -165,7 +165,8 @@ module FieldStruct
       # @return [::Time]
       def rezone(time, zone)
         return time unless zone.is_a?(::String)
-        return time.getlocal(zone == 'UTC' ? 0 : zone) unless zone.include?('/')
+        return time.utc if zone == 'UTC'
+        return time.getlocal(zone) unless zone.include?('/')
 
         require 'tzinfo'
         local = ::TZInfo::Timezone.get(zone).to_local(time)
