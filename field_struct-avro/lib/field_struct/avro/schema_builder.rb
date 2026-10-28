@@ -80,14 +80,9 @@ module FieldStruct
           name = anonymous_name
         end
         full_name = [namespace, name].compact.join('.')
-        if named && @defined.key?(full_name)
-          raise ArgumentError, "FieldStruct::Avro: #{klass} and #{@defined[full_name]} both become Avro #{full_name}; " \
-                               "put #{klass} in a module"
-        end
-        return full_name if @defined.key?(full_name)
         raise ArgumentError, 'FieldStruct::Avro cannot describe a recursive anonymous struct; assign it to a constant' if @inlining.include?(klass)
+        return full_name unless define(full_name, klass, named ? klass.to_s : 'an anonymous struct', named ? "put #{klass} in a module" : nil)
 
-        @defined[full_name] = named ? klass : 'an anonymous struct'
         @classes[klass] = full_name if named
         @records[klass] << full_name
         @inlining.push(klass)
@@ -99,6 +94,26 @@ module FieldStruct
         out
       ensure
         @inlining.delete(klass)
+      end
+
+      # Claims an Avro full name for a record or an enum. The same owner may
+      # come back to it; anything else would silently take the other's type.
+      #
+      # @param full_name [String]
+      # @param owner [Object] what the name stands for: the struct class, or
+      #   an enum's symbols and default
+      # @param label [String] the owner, for the error
+      # @param fix [String, nil] what to do about a clash
+      # @return [Boolean] whether the name is new, so its type must be written
+      # @raise [ArgumentError] when something else already has the name
+      def define(full_name, owner, label, fix = nil)
+        taken = @defined[full_name]
+        @defined[full_name] = [owner, label] unless taken
+        return true unless taken
+        return false if taken.first == owner
+
+        raise ArgumentError, "FieldStruct::Avro: #{label} and #{taken.last} both become Avro #{full_name}; " \
+                             "#{fix || 'rename one of the fields'}"
       end
 
       # @param klass [Class<FieldStruct::Base>] a class already defined in this schema
@@ -354,9 +369,8 @@ module FieldStruct
         return nil if symbols.nil? || avro[:enum] == false || !symbols.all? { |symbol| symbol.match?(NAME) }
 
         full_name = [namespace, name].compact.join('.')
-        return full_name if @defined.key?(full_name)
+        return full_name unless define(full_name, [symbols, avro[:enum_default]], 'an enum')
 
-        @defined[full_name] = 'an enum'
         out = {'type' => 'enum', 'name' => name, 'symbols' => symbols}
         out['default'] = avro[:enum_default].to_s if avro.key?(:enum_default)
         out

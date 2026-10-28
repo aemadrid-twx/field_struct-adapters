@@ -485,6 +485,25 @@ module FieldStruct
       # when it is already defined
       def record: (singleton(FieldStruct::Base) klass, String? anonymous_name, String? namespace) -> (::Hash[String, Object] | String)
 
+      # Claims an Avro full name for a record or an enum. The same owner may
+      # come back to it; anything else would silently take the other's type.
+      # 
+      # _@param_ `full_name`
+      # 
+      # _@param_ `owner` — what the name stands for: the struct class, or an enum's symbols and default
+      # 
+      # _@param_ `label` — the owner, for the error
+      # 
+      # _@param_ `fix` — what to do about a clash
+      # 
+      # _@return_ — whether the name is new, so its type must be written
+      def define: (
+                    String full_name,
+                    Object owner,
+                    String label,
+                    ?String? fix
+                  ) -> bool
+
       # _@param_ `klass` — a class already defined in this schema
       # 
       # _@param_ `namespace` — the namespace the reference sits in

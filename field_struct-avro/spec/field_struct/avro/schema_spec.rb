@@ -148,6 +148,23 @@ RSpec.describe FieldStruct::Avro, '.schema' do
     expect { described_class.schema(holder) }.to raise_error(ArgumentError, /Outer_x and an enum both become Avro Outer_x/)
   end
 
+  it 'refuses an anonymous record and an enum that land on the same name, in either order' do
+    member = Class.new(FieldStruct::Base) { required :n, :integer }
+    enum_first = struct('Clash::EnumFirst') do
+      required :x_0, :symbol, enum: %i[a b]
+      required :x, :union, of: [member, :string]
+    end
+    expect { described_class.schema(enum_first) }
+      .to raise_error(ArgumentError, /an anonymous struct and an enum both become Avro Clash\.EnumFirst_x_0; rename one of the fields/)
+
+    record_first = struct('Clash::RecordFirst') do
+      required :x, :union, of: [member, :string]
+      required :x_0, :symbol, enum: %i[a b]
+    end
+    expect { described_class.schema(record_first) }
+      .to raise_error(ArgumentError, /an enum and an anonymous struct both become Avro Clash\.RecordFirst_x_0/)
+  end
+
   it 'names an anonymous nested struct after its record and field' do
     address = Class.new(FieldStruct::Base) { required :city, :string }
     klass = struct('Person') { optional :home, address }
