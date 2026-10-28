@@ -76,6 +76,13 @@ RSpec.describe FieldStruct::Avro, 'encode and decode' do
     expect(round_trip(tick, timestamp: :nanos).at.nsec).to eq(123_456_789)
   end
 
+  it "lets an ArgumentError that isn't the timestamp check through as itself" do
+    odd = Class.new { def inspect = raise(ArgumentError, 'unrelated') }.new
+    stamp = struct('OddStamp') { required :at, :time, avro: {timestamp: odd} }
+
+    expect { described_class.to_datum(stamp.new(at: Time.now)) }.to raise_error(ArgumentError, /\Aunrelated\z/)
+  end
+
   it 'names a field inside an anonymous struct the way the schema does, as Holder#inner.at' do
     inner = Class.new(FieldStruct::Base) { required :at, :time }
     holder = struct('Holder') { required :inner, inner }
@@ -517,7 +524,24 @@ RSpec.describe FieldStruct::Avro, 'encode and decode' do
     bytes = described_class.encode(before.new(at: '2026-01-01T00:00:00Z'))
     writer = described_class.schema(before).merge('name' => 'After')
     expect { described_class.decode(after, bytes, writer_schema: writer, timestamp: :nanos) }
-      .to raise_error(ArgumentError, /at: written as timestamp-micros, read as timestamp-nanos/)
+      .to raise_error(ArgumentError, /at: written as timestamp-micros, read as timestamp-nanos\. /)
+  end
+
+  it 'refuses a time, date or decimal that went from optional to required, which the avro gem fails to decode' do
+    {time: [{}, '2026-01-01T00:00:00Z', 'timestamp-micros'], date: [{}, '2026-01-02', 'date'],
+     big_decimal: [{round: 2}, '1.25', 'decimal \\(scale 2\\)']}.each do |type, (options, value, described)|
+      before = struct("Req::Before#{type}") { optional :v, type, **options }
+      after = struct("Req::After#{type}") { required :v, type, **options }
+      bytes = described_class.encode(before.new(v: value))
+      writer = described_class.schema(before).merge('name' => "After#{type}")
+
+      expect { described_class.decode(after, bytes, writer_schema: writer) }
+        .to raise_error(ArgumentError, /v: written as a union with #{described}, read as #{described} outside one/)
+    end
+    plain_before = struct('Req::Plain') { optional :v, :string }
+    plain_after = struct('Req::PlainAfter') { required :v, :string }
+    writer = described_class.schema(plain_before).merge('name' => 'PlainAfter')
+    expect(described_class.decode(plain_after, described_class.encode(plain_before.new(v: 'x')), writer_schema: writer).v).to eq('x')
   end
 
   it 'round-trips many generated values' do

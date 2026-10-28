@@ -24,14 +24,15 @@ module FieldStruct
       # @return [Hash{String=>Array<String>}] for each reader record's full
       #   name, the fields the writer lacked, which the avro gem fills from
       #   the reader's defaults
-      # @raise [ArgumentError] naming each field whose logical type differs
+      # @raise [ArgumentError] naming each field whose logical type differs,
+      #   or that the avro gem fails to decode
       def self.check(writer, reader)
         resolution = new
         problems = resolution.compare(writer, reader, '', [])
         return resolution.absent if problems.empty?
 
         raise ArgumentError, "FieldStruct::Avro can't read these bytes: #{problems.join("; ")}. " \
-                             'The avro gem would decode them as the wrong value; this is not a compatible schema change'
+                             'The avro gem would decode them as the wrong value, or fail; this is not a compatible schema change'
       end
 
       def initialize
@@ -53,7 +54,9 @@ module FieldStruct
         elsif writer.type_sym == :union
           # Only the branches the avro gem would read as this reader.
           paired = writer.schemas.select { |branch| ::Avro::SchemaCompatibility.match_schemas(branch, reader) }
-          return paired.flat_map { |branch| compare(branch, reader, path, seen) }
+          problems = paired.flat_map { |branch| compare(branch, reader, path, seen) }
+          # The double decode matters only once nothing else blocks the field.
+          return problems.empty? ? unwrapped(paired, reader, path) : problems
         end
         return promoted(writer, reader, path) unless writer.type_sym == reader.type_sym
 
@@ -98,6 +101,22 @@ module FieldStruct
           @absent[reader.fullname] |= [field.name]
           []
         end
+      end
+
+      # A writer's union read as a bare logical type: the avro gem 1.12
+      # decodes the value twice (once for the branch, once for the reader),
+      # so a time, date or decimal fails inside the gem (Time#divmod and the
+      # like). Making a field required that was optional does this.
+      #
+      # @param paired [Array<Object>] the writer branches matching +reader+
+      # @param reader [Object] an +::Avro::Schema+ the avro gem decodes
+      # @param path [String]
+      # @return [Array<String>]
+      def unwrapped(paired, reader, path)
+        return [] if paired.empty? || !decoded(reader)
+
+        ["#{path}: written as a union with #{describe(paired.first)}, read as #{describe(reader)} outside one, " \
+         'which the avro gem fails to decode (keep the field optional)']
       end
 
       # Avro promotes a writer's int to long, float or double, a long to

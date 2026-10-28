@@ -63,13 +63,18 @@ module FieldStruct
       # @param avro [Hash{Symbol=>Object}]
       # @param default [Symbol] the +timestamp:+ given to the call
       # @param field [String, nil] the field, as Class#field, for the error
+      # @param error [Class<ArgumentError>, nil] raised with just the detail
+      #   instead, for a caller that names the field itself
       # @return [Symbol]
       # @raise [ArgumentError] for an unknown precision
-      def timestamp(avro, default, field = nil)
+      def timestamp(avro, default, field = nil, error: nil)
         value = avro.fetch(:timestamp, default)
         return value if TIMESTAMPS.include?(value)
 
-        raise ArgumentError, "FieldStruct::Avro#{" (#{field})" if field} avro: {timestamp:} must be one of #{TIMESTAMPS.inspect}, got #{value.inspect}"
+        detail = "avro: {timestamp:} must be one of #{TIMESTAMPS.inspect}, got #{value.inspect}"
+        raise error, detail if error
+
+        raise ArgumentError, "FieldStruct::Avro#{" (#{field})" if field} #{detail}"
       end
 
       # @param avro [Hash{Symbol=>Object}]
