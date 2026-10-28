@@ -556,6 +556,30 @@ RSpec.describe FieldStruct::Avro, 'encode and decode' do
     expect { described_class.schema(flagged) }.to raise_error(ArgumentError, /FalseOverride doesn't make a valid Avro schema/)
   end
 
+  it 'raises on a symbol the reader enum lacks, naming the field, unless the reader has an enum_default' do
+    writer = struct('Status::V2') { required :s, :symbol, enum: %i[open paid void] }
+    bytes = described_class.encode(writer.new(s: :void))
+    schema = described_class.schema(writer).merge('name' => 'V1', 'fields' => [{'name' => 's', 'type' =>
+      {'type' => 'enum', 'name' => 'V1_s', 'namespace' => 'Status', 'symbols' => %w[open paid void]}}])
+
+    strict = struct('Status::V1') { required :s, :symbol, enum: %i[open paid] }
+    expect { described_class.decode(strict, bytes, writer_schema: schema) }
+      .to raise_error(ArgumentError, 'FieldStruct::Avro: Status::V1#s is :void, which isn\'t one of the ' \
+                                     "field's enum symbols; give the reader avro: {enum_default:} to read new ones")
+
+    hidden = struct('Status::V1') { required :s, :symbol, enum: %i[open paid], sensitive: true }
+    expect { described_class.decode(hidden, bytes, writer_schema: schema) }
+      .to raise_error(ArgumentError, /Status::V1#s is a sensitive symbol, which/)
+
+    inner = Class.new(FieldStruct::Base) { required :s, :symbol, enum: %i[open paid] }
+    holder = struct('Status::Holder') { required :inner, inner }
+    datum = {'inner' => {'s' => 'void'}}
+    expect { described_class.from_datum(holder, datum) }.to raise_error(ArgumentError, /Status::Holder#inner\.s is :void/)
+
+    lenient = struct('Status::V1') { required :s, :symbol, enum: %i[open paid], avro: {enum_default: :open} }
+    expect(described_class.decode(lenient, bytes, writer_schema: schema).s).to eq(:open)
+  end
+
   it 'round-trips many generated values' do
     klass = struct('Sample') do
       required :i, :integer

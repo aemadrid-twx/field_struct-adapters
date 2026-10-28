@@ -56,7 +56,25 @@ module FieldStruct
           "FieldStruct::Avro: #{label} is #{sensitive ? "a sensitive time" : time.iso8601(9)}, which has #{message}"
         end
       end
-      private_constant :Located, :Imprecise
+
+      # A symbol the reader's enum doesn't have.
+      class Unknown < Located
+        # @return [::Symbol]
+        attr_reader :symbol
+
+        # @param symbol [::Symbol]
+        def initialize(symbol)
+          @symbol = symbol
+          super("isn't one of the field's enum symbols; give the reader avro: {enum_default:} to read new ones")
+        end
+
+        # @param label [String]
+        # @return [String]
+        def final(label)
+          "FieldStruct::Avro: #{label} is #{sensitive ? "a sensitive symbol" : symbol.inspect}, which #{message}"
+        end
+      end
+      private_constant :Located, :Imprecise, :Unknown
 
       # @param serialization [Symbol]
       # @param timestamp [Symbol, nil] the precision {#dump} checks times
@@ -102,14 +120,34 @@ module FieldStruct
       # @param klass [Class<FieldStruct::Base>]
       # @param datum [Hash{String=>Object}]
       # @return [FieldStruct::Base]
+      # @raise [ArgumentError] naming the field, for a symbol its enum lacks
       def load(klass, datum)
-        absent = @absent.fetch(klass, nil)
-        list = properties(klass)
-        list = list.reject { |property| absent.include?(property.key) } if absent && !absent.empty?
-        klass.new(list.to_h { |property| [property.field.name, load_value(datum[property.key], property.node, Options.field(property))] })
+        load_struct(klass, datum)
+      rescue Located => e
+        raise ArgumentError, e.final("#{klass.inspect}##{e.path.join(".")}")
       end
 
       private
+
+      # @param klass [Class<FieldStruct::Base>]
+      # @param datum [Hash{String=>Object}]
+      # @return [FieldStruct::Base]
+      # @raise [ArgumentError] from a named struct, naming the field
+      # @raise [Located] from an anonymous one, for the struct holding it
+      def load_struct(klass, datum)
+        absent = @absent.fetch(klass, nil)
+        list = properties(klass)
+        list = list.reject { |property| absent.include?(property.key) } if absent && !absent.empty?
+        klass.new(list.to_h do |property|
+          [property.field.name, load_value(datum[property.key], property.node, Options.field(property))]
+        rescue Located => e
+          e.sensitive = property.field.sensitive? if e.path.empty?
+          e.path.unshift(property.field.name)
+          raise e unless Introspection.named?(klass)
+
+          raise ArgumentError, e.final("#{klass.name}##{e.path.join(".")}")
+        end)
+      end
 
       # @param klass [Class<FieldStruct::Base>]
       # @return [Array<FieldStruct::Introspection::Property>]
@@ -277,7 +315,7 @@ module FieldStruct
           element = node.element
           element_avro = Options.nested(avro)
           value.map { |item| load_value(item, element, element_avro) }
-        when Introspection::StructNode then load(node.klass, value)
+        when Introspection::StructNode then load_struct(node.klass, value)
         when Introspection::UnionNode then load_union(value, node)
         else load_scalar(value, node)
         end
@@ -302,7 +340,7 @@ module FieldStruct
           candidate.is_a?(Introspection::StructNode) &&
             properties(candidate.klass).map(&:key).sort == value.keys.sort
         end
-        member ? load(member.klass, value) : value
+        member ? load_struct(member.klass, value) : value
       end
 
       # @param value [Object]
@@ -312,6 +350,13 @@ module FieldStruct
         case node.type
         when FieldStruct::Types::Time, FieldStruct::Types::DateTime then rezone(value, node.options[:zone])
         when FieldStruct::Types::Value then Oj.load(value, JSON_LOAD)
+        when FieldStruct::Types::Symbol
+          # The avro gem hands back a writer's symbol the reader's enum lacks
+          # (the Avro spec says to fail), and the instance would fail valid?.
+          enum = node.options[:enum]
+          raise Unknown, value.to_sym if enum && !enum.include?(value.to_sym)
+
+          value
         else value
         end
       end
