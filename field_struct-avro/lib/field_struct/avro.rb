@@ -13,6 +13,7 @@ require_relative 'avro/version'
 require_relative 'avro/schema_builder'
 require_relative 'avro/datum'
 require_relative 'avro/resolution'
+require_relative 'avro/cache'
 
 module FieldStruct
   # Apache Avro for FieldStruct classes: a record schema per class, and
@@ -74,7 +75,8 @@ module FieldStruct
     # @param timestamp [Symbol]
     # @return [String] the Avro binary encoding, without a container or header
     def self.encode(struct, serialization: :avro, timestamp: :micros)
-      parsed = parsed_schema(struct.class, serialization, timestamp)
+      check(struct.class, timestamp)
+      parsed = CACHE.reader(struct.class, serialization, timestamp).parsed
       io = StringIO.new(+'', 'wb')
       ::Avro::IO::DatumWriter.new(parsed).write(to_datum(struct, serialization:, timestamp:), ::Avro::IO::BinaryEncoder.new(io))
       io.string
@@ -91,32 +93,14 @@ module FieldStruct
     #   value (see {Resolution})
     def self.decode(klass, bytes, writer_schema: nil, serialization: :avro, timestamp: :micros)
       check(klass, timestamp)
-      builder = SchemaBuilder.new(klass, serialization:, timestamp:)
-      reader = ::Avro::Schema.parse(JSON.generate(builder.schema))
-      writer = reader
-      absent = {}
-      if writer_schema
-        writer = ::Avro::Schema.parse(writer_schema.is_a?(::String) ? writer_schema : JSON.generate(writer_schema))
-        absent = Resolution.check(writer, reader)
-      end
-      datum = ::Avro::IO::DatumReader.new(writer, reader).read(::Avro::IO::BinaryDecoder.new(StringIO.new(bytes)))
+      entry = CACHE.reader(klass, serialization, timestamp)
+      reader = entry.parsed
       # A field the writer lacked takes field_struct's own default, which
       # the Avro default can't always express (a date, a decimal, a proc).
-      # A class written under several record names skips only what all of
-      # them lacked, so a value one of them carried is never dropped.
-      skip = builder.records.transform_values { |names| names.map { |name| absent.fetch(name, []) }.reduce(:&) }
+      writer, skip = writer_schema ? CACHE.writer(writer_schema, entry) : [reader, {}]
+      datum = ::Avro::IO::DatumReader.new(writer, reader).read(::Avro::IO::BinaryDecoder.new(StringIO.new(bytes)))
       Datum.new(serialization:, timestamp:, absent: skip).load(klass, datum)
     end
-
-    # @param klass [Class<FieldStruct::Base>]
-    # @param serialization [Symbol]
-    # @param timestamp [Symbol]
-    # @return [Object] an +::Avro::Schema+ (the avro gem ships no signatures,
-    #   so the sig can't name its class)
-    def self.parsed_schema(klass, serialization, timestamp)
-      ::Avro::Schema.parse(JSON.generate(schema(klass, serialization:, timestamp:)))
-    end
-    private_class_method :parsed_schema
 
     # @param klass [Object]
     # @param timestamp [Object]

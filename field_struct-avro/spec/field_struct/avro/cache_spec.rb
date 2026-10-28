@@ -1,0 +1,84 @@
+# frozen_string_literal: true
+
+RSpec.describe FieldStruct::Avro::Cache do
+  def struct(const_name, &body)
+    klass = Class.new(FieldStruct::Base)
+    stub_const(const_name, klass)
+    klass.class_eval(&body) if body
+    klass
+  end
+
+  def round_trip(instance)
+    FieldStruct::Avro.decode(instance.class, FieldStruct::Avro.encode(instance))
+  end
+
+  let(:part) { struct('Inv::Part') { required :sku, :string } }
+  let(:box) do
+    inner = part
+    struct('Inv::Box') do
+      required :id, :integer
+      required :part, inner
+    end
+  end
+
+  it 'parses a schema once per class and options' do
+    first = FieldStruct::Avro::CACHE.reader(box, :avro, :micros)
+
+    expect(FieldStruct::Avro::CACHE.reader(box, :avro, :micros)).to be(first)
+    expect(FieldStruct::Avro::CACHE.reader(box, :avro, :nanos)).not_to be(first)
+  end
+
+  it 'picks up fields added or re-declared after first use, in the class or a nested one' do
+    round_trip(box.new(id: 1, part: {sku: 'a'}))
+
+    box.optional :note, :string
+    value = box.new(id: 2, part: {sku: 'b'}, note: 'hi')
+    expect(round_trip(value)).to eq(value)
+
+    part.optional :qty, :integer
+    expect(round_trip(box.new(id: 3, part: {sku: 'c', qty: 9})).part.qty).to eq(9)
+
+    box.required :id, :string
+    expect(round_trip(box.new(id: 'five', part: {sku: 'e'})).id).to eq('five')
+  end
+
+  it 'picks up a serialize declared after first use' do
+    box.optional :note, :string
+    round_trip(box.new(id: 1, part: {sku: 'a'}, note: 'x'))
+
+    box.serialize :avro, note: 'noteText'
+    entry = FieldStruct::Avro::CACHE.reader(box, :avro, :micros)
+    expect(entry.parsed.fields.map(&:name)).to include('noteText')
+    value = box.new(id: 4, part: {sku: 'd'}, note: 'x')
+    expect(round_trip(value)).to eq(value)
+  end
+
+  it 'renames the record of an anonymous struct once it is assigned to a constant' do
+    anon = Class.new(FieldStruct::Base) { required :v, :integer }
+    holder = struct('Inv::Holder') { required :thing, anon }
+    FieldStruct::Avro.encode(holder.new(thing: {v: 1}))
+
+    stub_const('Inv::Thing', anon)
+    expect(FieldStruct::Avro::CACHE.reader(holder, :avro, :micros).parsed.fields[0].type.name).to eq('Thing')
+  end
+
+  it 'keeps a checked writer schema per reader, and rechecks it when the reader changes' do
+    old = JSON.generate(FieldStruct::Avro.schema(box))
+    bytes = FieldStruct::Avro.encode(box.new(id: 1, part: {sku: 'a'}))
+    box.optional :extra, :integer, default: 7
+
+    expect(FieldStruct::Avro.decode(box, bytes, writer_schema: old).extra).to eq(7)
+    entry = FieldStruct::Avro::CACHE.reader(box, :avro, :micros)
+    expect(FieldStruct::Avro::CACHE.writer(old.dup, entry)).to be(FieldStruct::Avro::CACHE.writer(old, entry))
+
+    box.optional :later, :date, default: Date.new(2020, 1, 1)
+    expect(FieldStruct::Avro.decode(box, bytes, writer_schema: old)).to have_attributes(extra: 7, later: Date.new(2020, 1, 1))
+  end
+
+  it 'agrees across threads' do
+    value = box.new(id: 1, part: {sku: 'a'})
+
+    results = Array.new(8) { Thread.new { Array.new(100) { round_trip(value) == value }.all? } }.map(&:value)
+    expect(results).to all(be(true))
+  end
+end
