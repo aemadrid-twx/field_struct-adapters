@@ -164,6 +164,55 @@ RSpec.describe FieldStruct::Avro, 'encode and decode' do
     expect(round_trip(event)).to eq(event)
   end
 
+  it "applies a field's avro: options to its elements and members, and avro: {type:} to struct and union fields" do
+    klass = struct('Elem::Order') do
+      required :amounts, :array, of: :big_decimal, element: {round: 2}, avro: {precision: 10}
+      required :times, :array, of: :time, avro: {timestamp: :millis}
+      required :syms, :array, of: :symbol, element: {enum: %i[a b]}, avro: {enum: false}
+      required :when, :union, of: %i[time string], avro: {timestamp: :millis}
+    end
+    fields = described_class.schema(klass)['fields'].to_h { |field| [field['name'], field['type']] }
+    expect(fields['amounts']['items']).to eq(['null', {'type' => 'bytes', 'logicalType' => 'decimal', 'precision' => 10, 'scale' => 2}])
+    expect(fields['times']['items']).to eq(['null', {'type' => 'long', 'logicalType' => 'timestamp-millis'}])
+    expect(fields['syms']['items']).to eq(%w[null string])
+    expect(fields['when']).to include({'type' => 'long', 'logicalType' => 'timestamp-millis'})
+
+    order = klass.new(amounts: ['1.25'], times: ['2026-07-01 08:00:00.123'], syms: %i[a], when: '2026-07-01 08:00:00.5')
+    expect(round_trip(order)).to eq(order)
+    # millis now applies to elements and members, so finer times raise instead of being cut.
+    expect { described_class.encode(klass.new(order.to_h.merge(times: ['2026-07-01 08:00:00.123456']))) }
+      .to raise_error(ArgumentError, /more precision than timestamp-millis/)
+    expect { described_class.encode(klass.new(order.to_h.merge(when: Time.utc(2026, 7, 1, 8, 0, 0.123456r)))) }
+      .to raise_error(ArgumentError, /more precision than timestamp-millis/)
+
+    item = struct('Elem::Item') do
+      required :sku, :string
+      optional :payload, :value
+    end
+    as_string = %w[string null]
+    holder = struct('Elem::Holder') do
+      required :item, item, avro: {type: {'type' => 'record', 'name' => 'Ext', 'fields' => [{'name' => 'sku', 'type' => 'string'}, {'name' => 'payload', 'type' => as_string}]}}
+      required :id, :union, of: %i[integer string], avro: {type: 'string'}
+    end
+    fields = described_class.schema(holder)['fields'].to_h { |field| [field['name'], field['type']] }
+    expect(fields['item']['name']).to eq('Ext')
+    expect(fields['id']).to eq('string')
+    value = holder.new(item: {sku: 'a', payload: {'n' => 1}}, id: 'x-1')
+    expect(described_class.to_datum(value)).to eq('item' => {'sku' => 'a', 'payload' => '{"n":1}'}, 'id' => 'x-1')
+    expect(round_trip(value)).to eq(value)
+
+    # A union overridden to a timestamp holds a Time; its node has no options (no zone: to put back).
+    stamp = struct('Elem::Stamp') { required :at, :union, of: %i[time string], avro: {type: {'type' => 'long', 'logicalType' => 'timestamp-micros'}} }
+    at = Time.utc(2026, 7, 1, 8)
+    expect(round_trip(stamp.new(at: at)).at).to eq(at)
+
+    # A member struct's field overridden to a nullable type can be missing, so it isn't a required key.
+    loose = struct('Elem::Loose') { required :tag, Elem::Item, avro: {type: ['null', {'type' => 'record', 'name' => 'Tag', 'fields' => []}]} }
+    other = struct('Elem::Other') { required :z, :integer }
+    expect { described_class.schema(struct('Elem::Pick') { required :v, :union, of: [loose, other] }) }
+      .to raise_error(ArgumentError, /Elem::Loose has no required fields, so any record fits it/)
+  end
+
   it 'passes overridden structs, symbols in arrays and hashes, and zones through correctly' do
     line = struct('Ovr::Line') do
       required :sku, :string
@@ -211,6 +260,21 @@ RSpec.describe FieldStruct::Avro, 'encode and decode' do
     tree = node.new(label: 'root', children: [{label: 'a', children: [{label: 'a1'}]}, {label: 'b'}])
 
     expect(round_trip(tree)).to eq(tree)
+  end
+
+  it "writes a :value as the same JSON text field_struct's to_json does" do
+    line = struct('Vj::Line') { required :sku, :string }
+    doc = struct('Vj::Doc') { required :payload, :value }
+    value = doc.new(payload: {'t' => Time.utc(2026, 1, 1, 0, 0, 0.5r), 'd' => BigDecimal('1.50'), 'on' => Date.new(2026, 1, 2),
+                              's' => :x, 'line' => line.new(sku: 'a'), 'list' => [BigDecimal('2')]})
+
+    text = described_class.to_datum(value)['payload']
+    expect(JSON.parse(text)).to eq(JSON.parse(value.to_json)['payload'])
+    expect(JSON.parse(text)).to include('t' => '2026-01-01T00:00:00Z', 'd' => '1.5', 'on' => '2026-01-02', 'line' => {'sku' => 'a'}, 'list' => ['2.0'])
+    expect(round_trip(value)).to eq(doc.from_json(value.to_json))
+
+    # A struct as the whole :value goes through as_json, not its inspect text.
+    expect(described_class.to_datum(doc.new(payload: line.new(sku: 'a')))['payload']).to eq('{"sku":"a"}')
   end
 
   it 'reads bytes written with an older schema, filling new fields from defaults' do

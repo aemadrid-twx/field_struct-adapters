@@ -124,7 +124,7 @@ module FieldStruct
       def field_schema(property, record_name, namespace)
         field = property.field
         check_name(property.key, "field #{field.name.inspect}")
-        type = type_for(property.node, avro_options(property.node), "#{record_name}_#{property.key}", namespace)
+        type = type_for(property.node, field_avro(property), "#{record_name}_#{property.key}", namespace)
         out = {'name' => property.key}
         out['doc'] = field.description if field.description
         default = default_for(field, type)
@@ -141,6 +141,25 @@ module FieldStruct
         end
         out['x-fs-sensitive'] = true if field.sensitive?
         out
+      end
+
+      # @param property [FieldStruct::Introspection::Property]
+      # @return [Hash{Symbol=>Object}] the field's +avro:+ option, whatever
+      #   its node (a struct or union node carries no options of its own)
+      def field_avro(property)
+        options = property.field.options[:avro]
+        options.is_a?(::Hash) ? options : {}
+      end
+
+      # An array's elements and a union's members take the field's +avro:+
+      # options, under any of their own, except +:type+, which replaces only
+      # the field it was given on.
+      #
+      # @param avro [Hash{Symbol=>Object}] the enclosing node's options
+      # @param node [Object]
+      # @return [Hash{Symbol=>Object}]
+      def nested(avro, node)
+        avro.except(:type).merge(avro_options(node))
       end
 
       # @param node [FieldStruct::Introspection::ScalarNode, FieldStruct::Introspection::ArrayNode,
@@ -161,33 +180,35 @@ module FieldStruct
         return JSON.parse(JSON.generate(avro[:type])) if avro.key?(:type)
 
         case node
-        when Introspection::ArrayNode then array_type(node, name, namespace)
-        when Introspection::UnionNode then union_type(node, name, namespace)
+        when Introspection::ArrayNode then array_type(node, avro, name, namespace)
+        when Introspection::UnionNode then union_type(node, avro, name, namespace)
         when Introspection::StructNode then record(node.klass, name, namespace)
         else scalar_type(node.type, node.options, avro, name, namespace)
         end
       end
 
       # @param node [FieldStruct::Introspection::ArrayNode]
+      # @param avro [Hash{Symbol=>Object}]
       # @param name [String]
       # @param namespace [String, nil]
       # @return [Hash{String=>Object}]
       # @raise [ArgumentError] when the array records no element type
-      def array_type(node, name, namespace)
+      def array_type(node, avro, name, namespace)
         raise ArgumentError, "FieldStruct::Avro can't describe #{name}: an array of arrays or unions records no element type" unless node.element
 
         # Any element may be nil: validation skips nil elements.
-        {'type' => 'array', 'items' => nullable(type_for(node.element, avro_options(node.element), name, namespace))}
+        {'type' => 'array', 'items' => nullable(type_for(node.element, nested(avro, node.element), name, namespace))}
       end
 
       # @param node [FieldStruct::Introspection::UnionNode]
+      # @param avro [Hash{Symbol=>Object}]
       # @param name [String]
       # @param namespace [String, nil]
       # @return [Array<Object>]
       # @raise [ArgumentError] when two members land on one Avro type
-      def union_type(node, name, namespace)
+      def union_type(node, avro, name, namespace)
         members = node.members.each_with_index.map do |member, index|
-          type_for(member, avro_options(member), "#{name}_#{index}", namespace)
+          type_for(member, nested(avro, member), "#{name}_#{index}", namespace)
         end
         slots = members.map { |member| union_slot(member) }
         clash = slots.find { |slot| slots.count(slot) > 1 }
@@ -234,7 +255,7 @@ module FieldStruct
       def struct_keys(klass, required_only: false)
         properties = Introspection.properties(klass, serialization: @serialization)
         if required_only
-          properties = properties.select { |property| property.field.required? && !avro_options(property.node).key?(:type) }
+          properties = properties.select { |property| property.field.required? && !field_avro(property).key?(:type) }
         end
         properties.map(&:key)
       end
