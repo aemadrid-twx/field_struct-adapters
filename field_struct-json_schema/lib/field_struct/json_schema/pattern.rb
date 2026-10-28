@@ -313,7 +313,7 @@ module FieldStruct
                                item(alternatives.flatten.reduce(0) { |set, inner| set | inner[:set] }, alternatives)
                              else
                                # A lookaround matches no characters, but its repeats run from where
-                               # it stands (#lookaround_runs), and one holding a variable repeat
+                               # it stands (#paths), and one holding a variable repeat
                                # runs again on each iteration of a repeated group around it:
                                # #unambiguous? refuses that.
                                {set: 0, min: 0, max: 0, alternatives: nil, lookaround: repeating, body: alternatives}
@@ -554,93 +554,127 @@ module FieldStruct
         end
       end
 
-      # A polynomial blowup instead: three or more unbounded repeats that can
-      # all take the same character, one after another (+\d*\d*\d*x+, also
-      # +\d*(?:\d*)\d*x+ and +a*b*a*b*a*x+), can split one input in O(n^k)
-      # ways, slow enough on a long one. Two (quadratic) pass.
+      # A polynomial blowup instead. Two variable repeats that can take the
+      # same character, with nothing between them that needs another one
+      # (+\d*\d*x+, +.*x.*y+), are a pair: a split can move between them, so an
+      # input costs O(n^2). Each pair that starts where or after another ends
+      # multiplies that again: +\d*\d*\d*x+, +\d*\d*x\d*\d*y+, +.*x.*y.*z+ and
+      # +\d*\d*[a-z]*[a-z]*x+ are O(n^3), slow enough on a long input. So a
+      # chain of two pairs is refused and a single pair passes. Pairs that
+      # overlap without chaining (+a*b*a*b*x+: a with a, b with b) stay
+      # quadratic. Groups are unrolled and alternatives tried one at a time
+      # ({#paths}); a pattern with too many ways through gives up.
       #
       # @param items [Array<Hash>] one alternative
       # @return [Boolean]
       def polynomial?(items)
-        chars = unbounded(items)
-        (0..128).any? { |bit| chars[bit] == 1 && runs(items, 1 << bit)[1] >= 3 }
+        paths(items).any? { |path, _| chained?(path) }
       end
 
-      # @param items [Array<Hash>]
-      # @return [Integer] the characters some unbounded repeat in +items+ takes
-      def unbounded(items)
-        items.reduce(0) do |chars, inner|
-          chars | (inner[:max] == Float::INFINITY ? inner[:set] : 0) |
-            (inner[:alternatives] || inner[:body] || []).reduce(0) { |all, nested| all | unbounded(nested) }
-        end
-      end
+      # Most ways through one alternative {#paths} tries before giving up.
+      # @return [Integer]
+      PATHS = 1024
+      # A lookaround in a path: it matches nothing and stops nothing.
+      # @return [Hash{Symbol=>Object}]
+      ZERO_WIDTH = {set: 0, pass: ANY, variable: false}.freeze
 
-      # How many unbounded repeats taking +char+ a split can line up in
-      # +items+: at its start, anywhere, and at its end, and whether the
-      # whole sequence can pass taking only +char+ (or nothing). Where
-      # alternatives differ it takes the largest, which can only refuse more.
+      # Every way through +items+, as flat paths of atoms: +set+ (what the atom
+      # takes), +pass+ (the characters a split can carry past it: any, if it
+      # can match nothing) and +variable+ (whether its count varies, +?+
+      # included). A lookaround's body is a path that ends there, since what
+      # follows the lookaround starts again from where it stands.
       #
       # @param items [Array<Hash>]
-      # @param char [Integer] a one-character set
-      # @return [Array(Integer, Integer, Integer, Boolean)]
-      def runs(items, char)
-        items.reduce([0, 0, 0, true]) { |sequence, inner| chain(sequence, item_runs(inner, char)) }
+      # @return [Array(Array<Hash>, Boolean)] each path, and whether it ended
+      #   inside a lookaround
+      def paths(items)
+        items.reduce([[[], false]]) { |sofar, inner| extend_paths(sofar, ways(inner)) }
+      end
+
+      # @param sofar [Array(Array<Hash>, Boolean)] as {#paths}
+      # @param more [Array(Array<Hash>, Boolean)] what can come next
+      # @return [Array(Array<Hash>, Boolean)]
+      def extend_paths(sofar, more)
+        extended = sofar.flat_map { |path, ended| ended ? [[path, true]] : more.map { |tail, stop| [path + tail, stop] } }
+        unsupported if extended.size > PATHS
+        extended
       end
 
       # @param inner [Hash]
-      # @param char [Integer]
-      # @return [Array(Integer, Integer, Integer, Boolean)] as {#runs}
-      def item_runs(inner, char)
-        return lookaround_runs(inner, char) if inner[:body]
-        return atom_runs(inner, char) unless inner[:alternatives]
-
-        body = either(inner[:alternatives], char)
-        # Three copies are enough to reach three; a bounded count stops sooner.
-        result = Array.new([inner[:max], 3].min, body).reduce([0, 0, 0, true]) { |sequence, copy| chain(sequence, copy) }
-        # An unbounded group that can take the character counts as one
-        # unbounded repeat of it, as a+ does: (?:a)+, and also (?:ab)+, whose
-        # iterations line up with the next group's ((?:ab)+(?:ab)+(?:ab)+x).
-        result = result[0..2].map { |count| [count, 1].max } + [true] if inner[:max] == Float::INFINITY && inner[:set].anybits?(char)
-        result[3] ||= inner[:min].zero?
-        result
-      end
-
-      # @param alternatives [Array<Array<Hash>>]
-      # @param char [Integer]
-      # @return [Array(Integer, Integer, Integer, Boolean)] as {#runs}, the
-      #   largest of each
-      def either(alternatives, char)
-        alternatives.map { |items| runs(items, char) }.reduce do |one, other|
-          [[one[0], other[0]].max, [one[1], other[1]].max, [one[2], other[2]].max, one[3] || other[3]]
+      # @return [Array(Array<Hash>, Boolean)] the ways through one item, as {#paths}
+      def ways(inner)
+        if inner[:body]
+          [[[ZERO_WIDTH], false]] + inner[:body].flat_map { |items| paths(items) }.map { |path, _| [path, true] }
+        elsif inner[:alternatives]
+          group_ways(inner)
+        else
+          [[[{set: inner[:set], pass: inner[:min].zero? ? ANY : inner[:set], variable: inner[:min] < inner[:max]}], false]]
         end
       end
 
-      # A lookaround's repeats run on from the ones before it
-      # (+\d*(?=\d*\d*x)+), but it consumes nothing, so none run on after it.
+      # A group, unrolled up to three copies (enough to show a chain), and
+      # skipped when it can be. An unbounded group is also tried whole, as one
+      # variable repeat of its iterations: those can move to a neighbour as
+      # whole iterations, so +(?:ab)+(?:ab)+(?:ab)+x+ chains (see #pair?).
       #
-      # @param inner [Hash] a lookaround
-      # @param char [Integer]
-      # @return [Array(Integer, Integer, Integer, Boolean)] as {#runs}
-      def lookaround_runs(inner, char)
-        start, best, = either(inner[:body], char)
-        [start, best, 0, true]
+      # @param inner [Hash] a group
+      # @return [Array(Array<Hash>, Boolean)] as {#paths}
+      def group_ways(inner)
+        body = inner[:alternatives].flat_map { |items| paths(items) }
+        counts = inner[:min] > 3 ? [3] : (inner[:min]..[inner[:max], 3].min).to_a
+        copies = counts.flat_map { |count| (1..count).reduce([[[], false]]) { |sofar, _| extend_paths(sofar, body) } }
+        return copies unless inner[:max] == Float::INFINITY
+
+        whole = {set: inner[:set], pass: nullable?(inner) ? ANY : inner[:set], variable: true, whole: true,
+                 first: inner[:alternatives].reduce(0) { |set, items| set | first(items) },
+                 last: inner[:alternatives].reduce(0) { |set, items| set | first(items.reverse) }}
+        copies + [[[whole], false]]
       end
 
-      # @param inner [Hash] an atom
-      # @param char [Integer]
-      # @return [Array(Integer, Integer, Integer, Boolean)] as {#runs}
-      def atom_runs(inner, char)
-        return [1, 1, 1, true] if inner[:max] == Float::INFINITY && inner[:set].anybits?(char)
+      # Whether a flat path holds a chain of two pairs (see #polynomial?).
+      #
+      # @param path [Array<Hash>] as {#paths}
+      # @return [Boolean]
+      def chained?(path)
+        # The longest chain whose last pair ends at each atom.
+        longest = Array.new(path.size, 0)
+        path.each_with_index do |later, last|
+          next unless later[:variable]
 
-        [0, 0, 0, inner[:min].zero? || inner[:set].anybits?(char)]
+          # What a split can carry from an earlier atom to this one.
+          between = ANY
+          (last - 1).downto(0) do |index|
+            earlier = path[index]
+            longest[last] = [longest[last], 1 + longest[0..index].max].max if pair?(earlier, later, between)
+            between &= earlier[:pass]
+            break if between.zero?
+          end
+          return true if longest[last] >= 2
+        end
+        false
       end
 
-      # @param before [Array(Integer, Integer, Integer, Boolean)] as {#runs}
-      # @param after [Array(Integer, Integer, Integer, Boolean)]
-      # @return [Array(Integer, Integer, Integer, Boolean)] the two in a row
-      def chain(before, after)
-        start, best, tail, pass = before
-        [pass ? start + after[0] : start, [best, after[1], tail + after[0]].max, after[3] ? tail + after[2] : after[2], pass && after[3]]
+      # Whether a split can move input between two atoms of a path, given
+      # what it can carry past the ones between them. Two atoms share a
+      # character. A whole group and an atom: the atom can take whole
+      # iterations (+\d+(?:\d)++, not +\d+(?:,\d+)*+). Two whole groups:
+      # their iterations can start and end alike.
+      #
+      # @param earlier [Hash] as {#paths}
+      # @param later [Hash]
+      # @param between [Integer]
+      # @return [Boolean]
+      def pair?(earlier, later, between)
+        return false unless earlier[:variable] && later[:variable]
+
+        if earlier[:whole] && later[:whole]
+          earlier[:first].anybits?(later[:first] & between) && earlier[:last].anybits?(later[:last])
+        elsif earlier[:whole] || later[:whole]
+          group, atom = earlier[:whole] ? [earlier, later] : [later, earlier]
+          (group[:set] & ~(atom[:set] & between)).zero?
+        else
+          earlier[:set].anybits?(later[:set] & between)
+        end
       end
 
       # @param items [Array<Hash>] with no group among them (see #unambiguous?)
