@@ -653,7 +653,10 @@ RSpec.describe FieldStruct::JSONSchema do
       # that overlap without one following the other don't chain (fourth review).
       /\A\d*(?:x\d*)?\d*y\z/ => '^\d*(?:x\d*)?\d*y$',
       /\Aa*b*a*b*x\z/ => '^a*b*a*b*x$',
-      /\A\d?\d?x\z/ => '^\d?\d?x$'
+      /\A\d?\d?x\z/ => '^\d?\d?x$',
+      # A whole group pairs with one neighbour only (fifth review).
+      /\Aa*(?:ab?)+\z/ => '^a*(?:ab?)+$',
+      /\A(?:a)+(?:ab|b)+y\z/ => '^(?:a)+(?:ab|b)+y$'
     }.each do |regexp, pattern|
       it "translates #{regexp.inspect}" do
         expect(described_class.pattern_for(regexp)).to eq(pattern)
@@ -692,7 +695,11 @@ RSpec.describe FieldStruct::JSONSchema do
      /\A\d*\d*x\d*\d*y\z/, /\A[a-z]+[a-z0-9]*\.[a-z]+[a-z0-9]*\z/, /\A.*x.*y.*z\z/, /\A\d*\d*[a-z]*[a-z]*x\z/,
      /\A\d*\w*[a-z]*x\z/, /\d*x\d*\d*y/, /\A\d*\d*(?=x\d*\d*y)\z/,
      # Bounded repeats count too: each multiplies the work by its range (C10).
-     /\A\d{0,8}\d{0,8}\d{0,8}x\z/, /\A\d?\d?\d?x\z/].each do |regexp|
+     /\A\d{0,8}\d{0,8}\d{0,8}x\z/, /\A\d?\d?\d?x\z/,
+     # A group trades single iterations with a neighbour that takes only some of its characters, at the seam
+     # with its last iteration, and when bounded or optional, as a{2,50} does (fifth review).
+     /\Aa*(?:ab?)+a*y\z/, /\A\d*(?:\d,?)+\d*y\z/, /\A\d*(?:\d|[a-z]x)+\d*y\z/, /\d*(?:\d,?)+y/,
+     /\Ax*(?:x\d*)+\d*y\z/, /\A\d*(?:\d*x)+x*y\z/, /\Aa*(?:a){2,50}a*y\z/, /\Aa*(?:a)?a*y\z/].each do |regexp|
       it "gives up on #{regexp.inspect}" do
         expect(described_class.pattern_for(regexp)).to be_nil
       end

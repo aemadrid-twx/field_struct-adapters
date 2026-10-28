@@ -612,9 +612,12 @@ module FieldStruct
       end
 
       # A group, unrolled up to three copies (enough to show a chain), and
-      # skipped when it can be. An unbounded group is also tried whole, as one
-      # variable repeat of its iterations: those can move to a neighbour as
-      # whole iterations, so +(?:ab)+(?:ab)+(?:ab)+x+ chains (see #pair?).
+      # skipped when it can be. A group whose count varies is also tried whole,
+      # as one variable repeat of its iterations: those can move to a
+      # neighbour as whole iterations, so +(?:ab)+(?:ab)+(?:ab)+x+ chains (see
+      # #pair?). An unbounded one is tried whole next to one unrolled
+      # iteration too, so a chain can trade iterations on one side and the
+      # last iteration's atoms on the other (+x*(?:x\d*)+\d*y+).
       #
       # @param inner [Hash] a group
       # @return [Array(Array<Hash>, Boolean)] as {#paths}
@@ -622,12 +625,18 @@ module FieldStruct
         body = inner[:alternatives].flat_map { |items| paths(items) }
         counts = inner[:min] > 3 ? [3] : (inner[:min]..[inner[:max], 3].min).to_a
         copies = counts.flat_map { |count| (1..count).reduce([[[], false]]) { |sofar, _| extend_paths(sofar, body) } }
-        return copies unless inner[:max] == Float::INFINITY
+        return copies unless inner[:min] < inner[:max]
 
         whole = {set: inner[:set], pass: nullable?(inner) ? ANY : inner[:set], variable: true, whole: true,
                  first: inner[:alternatives].reduce(0) { |set, items| set | first(items) },
-                 last: inner[:alternatives].reduce(0) { |set, items| set | first(items.reverse) }}
-        copies + [[[whole], false]]
+                 last: inner[:alternatives].reduce(0) { |set, items| set | first(items.reverse) },
+                 # Per alternative, the sets of the items an iteration must match.
+                 iterations: inner[:alternatives].map { |items| items.reject { |item| nullable?(item) }.map { |item| item[:set] } }}
+        whole_path = [[[whole], false]]
+        return copies + whole_path unless inner[:max] == Float::INFINITY
+
+        copies + whole_path + extend_paths(whole_path, body) +
+          body.map { |path, ended| ended ? [path, true] : [path + [whole], false] }
       end
 
       # Whether a flat path holds a chain of two pairs (see #polynomial?).
@@ -655,8 +664,8 @@ module FieldStruct
 
       # Whether a split can move input between two atoms of a path, given
       # what it can carry past the ones between them. Two atoms share a
-      # character. A whole group and an atom: the atom can take whole
-      # iterations (+\d+(?:\d)++, not +\d+(?:,\d+)*+). Two whole groups:
+      # character. A whole group and an atom: the atom can take some whole
+      # iteration (+\d+(?:\d,?)++, not +\d+(?:,\d+)*+). Two whole groups:
       # their iterations can start and end alike.
       #
       # @param earlier [Hash] as {#paths}
@@ -670,7 +679,10 @@ module FieldStruct
           earlier[:first].anybits?(later[:first] & between) && earlier[:last].anybits?(later[:last])
         elsif earlier[:whole] || later[:whole]
           group, atom = earlier[:whole] ? [earlier, later] : [later, earlier]
-          group[:set].nobits?(~(atom[:set] & between))
+          # The atom can take some whole iteration: one alternative whose
+          # required items can each be met by a character it carries.
+          carried = atom[:set] & between
+          group[:iterations].any? { |required| required.all? { |set| set.anybits?(carried) } }
         else
           earlier[:set].anybits?(later[:set] & between)
         end
