@@ -11,7 +11,7 @@ module FieldStruct
       SCALARS = {TYPE_STRING: 'string', TYPE_BYTES: 'bytes', TYPE_BOOL: 'bool',
                  TYPE_INT64: 'int64', TYPE_DOUBLE: 'double'}.freeze
 
-      # @param file [Google::Protobuf::FileDescriptorProto]
+      # @param file [Object] a +Google::Protobuf::FileDescriptorProto+
       # @param klass [Class<FieldStruct::Base>]
       def initialize(file, klass)
         @file = file
@@ -32,13 +32,13 @@ module FieldStruct
 
       private
 
-      # @param message [Google::Protobuf::DescriptorProto]
+      # @param message [Object] a +Google::Protobuf::DescriptorProto+
       # @return [Array<String>]
       def message_lines(message)
         ["message #{message.name} {", *message.field.map { |field| "  #{field_line(field)}" }, '}']
       end
 
-      # @param field [Google::Protobuf::FieldDescriptorProto]
+      # @param field [Object] a +Google::Protobuf::FieldDescriptorProto+
       # @return [String]
       def field_line(field)
         label = if field.label == :LABEL_REPEATED then 'repeated '

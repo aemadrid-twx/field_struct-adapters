@@ -30,7 +30,7 @@ module FieldStruct
         @imports = []
       end
 
-      # @return [Google::Protobuf::FileDescriptorProto]
+      # @return [Object] a +Google::Protobuf::FileDescriptorProto+
       # @raise [ArgumentError] when the class can't be described exactly
       def file
         message = Google::Protobuf::DescriptorProto.new(name: Protobuf.message_name(@klass))
@@ -70,7 +70,7 @@ module FieldStruct
         value
       end
 
-      # @param message [Google::Protobuf::DescriptorProto]
+      # @param message [Object] a +Google::Protobuf::DescriptorProto+
       # @param property [FieldStruct::Introspection::Property]
       # @return [void]
       def add_field(message, property)
@@ -96,8 +96,8 @@ module FieldStruct
 
       # proto3 +optional+: a synthetic one-field oneof named +_<field>+.
       #
-      # @param message [Google::Protobuf::DescriptorProto]
-      # @param field [Google::Protobuf::FieldDescriptorProto]
+      # @param message [Object] a +Google::Protobuf::DescriptorProto+
+      # @param field [Object] a +Google::Protobuf::FieldDescriptorProto+
       # @return [void]
       def explicit_presence(message, field)
         field.proto3_optional = true

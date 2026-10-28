@@ -39,6 +39,9 @@ module FieldStruct
   # A class's message is built once, the first time it's needed, and
   # registered in google-protobuf's generated pool under the package named
   # after the class's modules (+Billing::Invoice+ is +billing.Invoice+).
+  #
+  # google-protobuf ships no RBS signatures, so the YARD types (and sig/)
+  # say +Object+ or +Class+ for its messages and name the class in prose.
   module Protobuf
     @message_classes = {}
     @mutex = Mutex.new
@@ -46,7 +49,7 @@ module FieldStruct
     class << self
       # @param klass [Class<FieldStruct::Base>]
       # @param serialization [Symbol]
-      # @return [Google::Protobuf::FileDescriptorProto] the file describing +klass+
+      # @return [Object] a +Google::Protobuf::FileDescriptorProto+; the file describing +klass+
       # @raise [ArgumentError] when a field has no exact protobuf mapping
       def file_descriptor(klass, serialization: :protobuf)
         check(klass)
@@ -64,21 +67,21 @@ module FieldStruct
       #
       # @param klass [Class<FieldStruct::Base>]
       # @param serialization [Symbol]
-      # @return [Class<Google::Protobuf::AbstractMessage>]
+      # @return [Class] a +Google::Protobuf::AbstractMessage+ subclass
       def message_class(klass, serialization: :protobuf)
         @mutex.synchronize { register(klass, serialization) }
       end
 
       # @param struct [FieldStruct::Base]
       # @param serialization [Symbol]
-      # @return [Google::Protobuf::AbstractMessage]
+      # @return [Object] a +Google::Protobuf::AbstractMessage+
       def to_message(struct, serialization: :protobuf)
         check(struct.class)
         Codec.new(serialization: serialization).dump(struct)
       end
 
       # @param klass [Class<FieldStruct::Base>]
-      # @param message [Google::Protobuf::AbstractMessage]
+      # @param message [Object] a +Google::Protobuf::AbstractMessage+
       # @param serialization [Symbol]
       # @return [FieldStruct::Base]
       def from_message(klass, message, serialization: :protobuf)
@@ -132,7 +135,7 @@ module FieldStruct
       # @param klass [Class<FieldStruct::Base>]
       # @param serialization [Symbol]
       # @param pending [Array<Class>] the classes being registered, outermost first
-      # @return [Class<Google::Protobuf::AbstractMessage>]
+      # @return [Class] a +Google::Protobuf::AbstractMessage+ subclass
       def register(klass, serialization, pending = [])
         key = [klass, serialization]
         return @message_classes[key] if @message_classes.key?(key)

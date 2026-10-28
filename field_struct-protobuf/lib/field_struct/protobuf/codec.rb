@@ -13,7 +13,7 @@ module FieldStruct
       end
 
       # @param struct [FieldStruct::Base]
-      # @return [Google::Protobuf::AbstractMessage]
+      # @return [Object] a +Google::Protobuf::AbstractMessage+
       def dump(struct)
         attributes = Introspection.properties(struct.class, serialization: @serialization).filter_map do |property|
           value = struct.public_send(property.field.name)
@@ -23,7 +23,7 @@ module FieldStruct
       end
 
       # @param klass [Class<FieldStruct::Base>]
-      # @param message [Google::Protobuf::AbstractMessage]
+      # @param message [Object] a +Google::Protobuf::AbstractMessage+
       # @return [FieldStruct::Base]
       def load(klass, message)
         attributes = Introspection.properties(klass, serialization: @serialization).to_h do |property|
@@ -67,14 +67,14 @@ module FieldStruct
       end
 
       # @param time [::Time]
-      # @return [Google::Protobuf::Timestamp]
+      # @return [Object] a +Google::Protobuf::Timestamp+
       def timestamp(time)
         Google::Protobuf::Timestamp.new(seconds: time.to_i, nanos: time.nsec)
       end
 
       # @param value [Object]
       # @param property [FieldStruct::Introspection::Property]
-      # @return [Google::Protobuf::Value]
+      # @return [Object] a +Google::Protobuf::Value+
       def json_value(value, property)
         Google::Protobuf::Value.from_ruby(value)
       rescue NoMethodError, ArgumentError, Google::Protobuf::TypeError, Google::Protobuf::UnexpectedStructType
@@ -82,7 +82,7 @@ module FieldStruct
                              "Numeric, true, false, nil); got #{value.class}"
       end
 
-      # @param message [Google::Protobuf::AbstractMessage]
+      # @param message [Object] a +Google::Protobuf::AbstractMessage+
       # @param property [FieldStruct::Introspection::Property]
       # @return [Object]
       def load_value(message, property)
