@@ -660,7 +660,12 @@ RSpec.describe FieldStruct::JSONSchema do
      # A variable repeat that can run into what follows it, or the next iteration.
      /\A(?:a?a)+\z/, /\A(?:\d+\.?)+\z/, /\A(?:a+b|a)+\z/, /\A(?:[a-z]+\d*)+\z/i,
      # Three or more overlapping unbounded repeats in a row: polynomial (2.4 s at 120 characters).
-     /\A\d*\d*\d*x\z/, /\A\d*\w*\d+x\z/, /\A(?:a)?\w+\d*\d*!\z/].each do |regexp|
+     /\A\d*\d*\d*x\z/, /\A\d*\w*\d+x\z/, /\A(?:a)?\w+\d*\d*!\z/,
+     # ... through groups, past repeats that can match nothing, and as repeated groups (second review).
+     /\A(?:\d*)\d*\d*x\z/, /\A\d*(?:a|\d*)\d*x\z/, /\A(?:\d*\d*)\d*x\z/, /\A(?:ba*){2}a*a*x\z/, /\Aa*b*a*b*a*x\z/,
+     /\A\s*\w*\s*\w*\s*\w*\s*\z/, /\A(?:ab)+(?:ab)+(?:ab)+x\z/,
+     # A lookahead holding a variable repeat runs again on each iteration.
+     /\A(?:\d(?!\d*\d*y))+x\z/].each do |regexp|
       it "gives up on #{regexp.inspect}" do
         expect(described_class.pattern_for(regexp)).to be_nil
       end

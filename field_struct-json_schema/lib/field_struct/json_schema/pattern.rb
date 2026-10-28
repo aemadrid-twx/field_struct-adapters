@@ -76,7 +76,8 @@ module FieldStruct
       NON_ASCII = 1 << 128
       # @return [Integer]
       ANY = (1 << 129) - 1
-      # Single-character escapes in an emitted atom, and what they stand for.
+      # Single-character escapes in an emitted atom, and what they stand for
+      # (+\b+ only in a class: outside one it's unsupported).
       # @return [Hash{String=>String}]
       ESCAPED = {'n' => "\n", 'r' => "\r", 't' => "\t", 'f' => "\f", 'v' => "\v", 'b' => "\b", '0' => "\0"}.freeze
 
@@ -303,8 +304,14 @@ module FieldStruct
         kind, start, repeating = @groups.pop || unsupported
         alternatives = @frames.pop
         @sequences.concat(alternatives)
-        # A lookaround matches no characters, so it isn't an item.
-        @frames.last.last << item(alternatives.flatten.reduce(0) { |set, inner| set | inner[:set] }, alternatives) if kind == :plain
+        if kind == :plain
+          @frames.last.last << item(alternatives.flatten.reduce(0) { |set, inner| set | inner[:set] }, alternatives)
+        elsif repeating
+          # A lookaround matches no characters, so it's no item, but one
+          # holding a variable repeat runs again on each iteration of a
+          # repeated group around it: #unambiguous? refuses that.
+          @frames.last.last << {set: 0, min: 0, max: 0, alternatives: nil, lookaround: true}
+        end
         @out << ')'
         @groups.last[2] = true if repeating && !@groups.empty?
         @quantifiable = kind == :plain
@@ -525,53 +532,95 @@ module FieldStruct
         alternatives = group[:alternatives]
         return false unless alternatives
         return false if alternatives.any? { |items| items.empty? || items.all? { |inner| nullable?(inner) } }
-        return false if alternatives.flatten.any? { |inner| inner[:alternatives] }
+        return false if alternatives.flatten.any? { |inner| inner[:alternatives] || inner[:lookaround] }
 
         firsts = alternatives.map { |items| first(items) }
         return false unless firsts.combination(2).all? { |one, other| one.nobits?(other) }
 
-        again = firsts.reduce(0, :|)
+        next_iteration = firsts.reduce(0, :|)
         alternatives.all? do |items|
           items.each_with_index.all? do |inner, index|
-            inner[:min] == inner[:max] || inner[:set].nobits?(first(items[(index + 1)..], again))
+            inner[:min] == inner[:max] || inner[:set].nobits?(first(items[(index + 1)..], next_iteration))
           end
         end
       end
 
-      # A polynomial blowup instead: three or more adjacent unbounded repeats
-      # that share a character (+\d*\d*\d*x+) can split one input in
-      # O(n^k) ways, slow enough on a long one. Two (quadratic) pass.
+      # A polynomial blowup instead: three or more unbounded repeats that can
+      # all take the same character, one after another (+\d*\d*\d*x+, also
+      # +\d*(?:\d*)\d*x+ and +a*b*a*b*a*x+), can split one input in O(n^k)
+      # ways, slow enough on a long one. Two (quadratic) pass.
       #
       # @param items [Array<Hash>] one alternative
       # @return [Boolean]
       def polynomial?(items)
-        shared = nil
-        run = 0
-        items.each do |inner|
-          if inner[:max] == Float::INFINITY
-            if shared&.anybits?(inner[:set])
-              shared &= inner[:set]
-              run += 1
-              return true if run >= 3
-            else
-              shared = inner[:set]
-              run = 1
-            end
-          elsif !nullable?(inner) && shared&.nobits?(inner[:set])
-            shared = nil
-            run = 0
-          end
-        end
-        false
+        chars = unbounded(items)
+        (0..128).any? { |bit| chars[bit] == 1 && runs(items, 1 << bit)[1] >= 3 }
       end
 
       # @param items [Array<Hash>]
+      # @return [Integer] the characters some unbounded repeat in +items+ takes
+      def unbounded(items)
+        items.reduce(0) do |chars, inner|
+          chars | (inner[:max] == Float::INFINITY ? inner[:set] : 0) |
+            (inner[:alternatives] || []).reduce(0) { |all, nested| all | unbounded(nested) }
+        end
+      end
+
+      # How many unbounded repeats taking +char+ a split can line up in
+      # +items+: at its start, anywhere, and at its end, and whether the
+      # whole sequence can pass taking only +char+ (or nothing). Where
+      # alternatives differ it takes the largest, which can only refuse more.
+      #
+      # @param items [Array<Hash>]
+      # @param char [Integer] a one-character set
+      # @return [Array(Integer, Integer, Integer, Boolean)]
+      def runs(items, char)
+        items.reduce([0, 0, 0, true]) { |sequence, inner| chain(sequence, item_runs(inner, char)) }
+      end
+
+      # @param inner [Hash]
+      # @param char [Integer]
+      # @return [Array(Integer, Integer, Integer, Boolean)] as {#runs}
+      def item_runs(inner, char)
+        return atom_runs(inner, char) unless inner[:alternatives]
+
+        body = inner[:alternatives].map { |items| runs(items, char) }.reduce do |one, other|
+          [[one[0], other[0]].max, [one[1], other[1]].max, [one[2], other[2]].max, one[3] || other[3]]
+        end
+        # Three copies are enough to reach three; a bounded count stops sooner.
+        result = Array.new([inner[:max], 3].min, body).reduce([0, 0, 0, true]) { |sequence, copy| chain(sequence, copy) }
+        # An unbounded group that can take the character counts as one
+        # unbounded repeat of it, as a+ does: (?:a)+, and also (?:ab)+, whose
+        # iterations line up with the next group's ((?:ab)+(?:ab)+(?:ab)+x).
+        result = result[0..2].map { |count| [count, 1].max } + [true] if inner[:max] == Float::INFINITY && inner[:set].anybits?(char)
+        result[3] ||= inner[:min].zero?
+        result
+      end
+
+      # @param inner [Hash] an atom
+      # @param char [Integer]
+      # @return [Array(Integer, Integer, Integer, Boolean)] as {#runs}
+      def atom_runs(inner, char)
+        return [1, 1, 1, true] if inner[:max] == Float::INFINITY && inner[:set].anybits?(char)
+
+        [0, 0, 0, inner[:min].zero? || inner[:set].anybits?(char)]
+      end
+
+      # @param before [Array(Integer, Integer, Integer, Boolean)] as {#runs}
+      # @param after [Array(Integer, Integer, Integer, Boolean)]
+      # @return [Array(Integer, Integer, Integer, Boolean)] the two in a row
+      def chain(before, after)
+        start, best, tail, pass = before
+        [pass ? start + after[0] : start, [best, after[1], tail + after[0]].max, after[3] ? tail + after[2] : after[2], pass && after[3]]
+      end
+
+      # @param items [Array<Hash>] with no group among them (see #unambiguous?)
       # @param after [Integer] what can start once +items+ all match nothing
       # @return [Integer] the characters the sequence can start with
       def first(items, after = 0)
         set = 0
         items.each do |inner|
-          set |= inner[:alternatives] ? inner[:alternatives].reduce(0) { |all, nested| all | first(nested) } : inner[:set]
+          set |= inner[:set]
           return set unless nullable?(inner)
         end
         set | after
