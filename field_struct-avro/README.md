@@ -9,6 +9,7 @@ Apache Avro for [FieldStruct](https://github.com/aemadrid-twx/field_struct) clas
 > gem 'field_struct-avro', git: 'https://github.com/aemadrid-twx/field_struct-adapters', glob: 'field_struct-avro/*.gemspec'
 > ```
 
+<!-- doctest -->
 ```ruby
 require 'field_struct/avro'
 
@@ -30,6 +31,8 @@ FieldStruct::Avro.schema(Billing::Invoice)
 #      {"name" => "status", "type" => {"type" => "enum", "name" => "Invoice_status", "symbols" => ["open", "paid"]}},
 #      {"name" => "tags",   "type" => ["null", {"type" => "array", "items" => ["null", "string"]}], "default" => nil}]}
 
+invoice = Billing::Invoice.new(id: '0b9d6a4e-3c1f-4a59-9d1e-2f6a8c7b5e10', total: '19.90',
+                               at: '2026-10-27 09:30:00.123456', status: :paid, tags: ['rush'])
 bytes = FieldStruct::Avro.encode(invoice)
 FieldStruct::Avro.decode(Billing::Invoice, bytes) == invoice  # => true
 ```

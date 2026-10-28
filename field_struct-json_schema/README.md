@@ -9,6 +9,7 @@ JSON Schema (draft 2020-12) for [FieldStruct](https://github.com/aemadrid-twx/fi
 > gem 'field_struct-json_schema', git: 'https://github.com/aemadrid-twx/field_struct-adapters', glob: 'field_struct-json_schema/*.gemspec'
 > ```
 
+<!-- doctest -->
 ```ruby
 require 'field_struct/json_schema'
 
@@ -53,6 +54,7 @@ It returns a Hash with String keys, a fresh copy each time: add enum values or d
 
 `FieldStruct::JSONSchema.pattern_for(regexp)` translates a Ruby Regexp into an ECMA-262 pattern that matches exactly the same strings under the `u` flag (what Ajv and JSON Schema 2020-12 use), or returns `nil`. A wrong pattern would make a validator reject values the struct accepts, so anything without an exact equivalent is left out rather than approximated:
 
+<!-- doctest -->
 ```ruby
 FieldStruct::JSONSchema.pattern_for(/\A\d+\.\d+\z/)  # => "^\\d+\\.\\d+$"
 FieldStruct::JSONSchema.pattern_for(/\A\h+\z/i)      # => "^[0-9a-fA-F]+$"
@@ -65,6 +67,7 @@ FieldStruct::JSONSchema.pattern_for(/\A(?>a+)\z/)    # => nil
 
 A field's `json_schema: {...}` option beats the type's own `json_schema` method, which beats the derived schema. `true` and `false` are the always/never schemas. Define `json_schema` on a custom type to describe it; a custom type without one is unconstrained and named after its `ruby_type`: `{"x-ruby-type" => "Rational"}` for a type whose `ruby_type` is `Rational`. An override describes a present value: an optional field still adds `null`.
 
+<!-- doctest -->
 ```ruby
 class Money < FieldStruct::Types::Base
   def coerce(value, **) = value.to_r
