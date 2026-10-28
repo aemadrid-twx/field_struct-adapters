@@ -139,10 +139,13 @@ module FieldStruct
       # class, which {Datum#load} leaves to field_struct's defaults
       def writer: ((::Hash[String, Object] | String) writer_schema, FieldStruct::Avro::Cache::Reader reader) -> [Object, ::Hash[singleton(FieldStruct::Base), ::Array[String]]]
 
+      # What an entry is valid for, per class: its Field objects, its
+      # serialization mapping and its name.
+      # 
       # _@param_ `klass`
       # 
       # _@param_ `serialization`
-      def stamp: (singleton(FieldStruct::Base) klass, Symbol serialization) -> [::Array[FieldStruct::Field], Object, String]
+      def self.stamp: (singleton(FieldStruct::Base) klass, Symbol serialization) -> [::Array[FieldStruct::Field], Object, String]
 
       # _@param_ `stamps`
       # 
@@ -633,6 +636,11 @@ module FieldStruct
       # 
       # _@param_ `what`
       def check_name: (String name, String what) -> void
+
+      # Each struct class's {Cache.stamp}, taken before the class was read,
+      # so a class changed while {#schema} ran makes the entry stale rather
+      # than a stale entry look fresh.
+      attr_reader stamps: ::Hash[singleton(FieldStruct::Base), ::Array[Object]]
 
       # The Avro full names each struct class was written as, filled in by
       # {#schema}. An anonymous struct used in two fields has two.

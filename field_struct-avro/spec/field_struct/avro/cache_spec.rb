@@ -53,6 +53,27 @@ RSpec.describe FieldStruct::Avro::Cache do
     expect(round_trip(value)).to eq(value)
   end
 
+  it 'keeps one entry per serialization' do
+    box.serialize :api, id: 'boxId'
+    value = box.new(id: 1, part: {sku: 'a'})
+    FieldStruct::Avro.encode(value)
+
+    expect(FieldStruct::Avro::CACHE.reader(box, :api, :micros).parsed.fields.map(&:name)).to eq(%w[boxId part])
+    expect(FieldStruct::Avro.decode(box, FieldStruct::Avro.encode(value, serialization: :api), serialization: :api)).to eq(value)
+  end
+
+  it 'stamps a class before reading it, so a change made while the schema is built is noticed' do
+    builder = FieldStruct::Avro::SchemaBuilder.new(box, serialization: :avro, timestamp: :micros)
+    allow(FieldStruct::Avro::SchemaBuilder).to receive(:new).and_return(builder)
+    allow(builder).to receive(:schema).and_wrap_original do |original|
+      original.call.tap { box.optional :late, :string }
+    end
+    FieldStruct::Avro::CACHE.reader(box, :avro, :nanos)
+    allow(FieldStruct::Avro::SchemaBuilder).to receive(:new).and_call_original
+
+    expect(FieldStruct::Avro::CACHE.reader(box, :avro, :nanos).parsed.fields.map(&:name)).to include('late')
+  end
+
   it 'renames the record of an anonymous struct once it is assigned to a constant' do
     anon = Class.new(FieldStruct::Base) { required :v, :integer }
     holder = struct('Inv::Holder') { required :thing, anon }

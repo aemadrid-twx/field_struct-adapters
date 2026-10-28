@@ -62,8 +62,7 @@ module FieldStruct
         builder = SchemaBuilder.new(klass, serialization:, timestamp:)
         parsed = ::Avro::Schema.parse(JSON.generate(builder.schema))
         records = builder.records.transform_values(&:freeze).freeze
-        stamps = records.keys.to_h { |struct| [struct, stamp(struct, serialization)] }.freeze
-        entry = Reader.new(parsed, records, stamps)
+        entry = Reader.new(parsed, records, builder.stamps.freeze)
         @lock.synchronize do
           stale = @readers[key]
           @writers.delete_if { |(_, owner), _| owner.equal?(stale) } if stale
@@ -79,7 +78,8 @@ module FieldStruct
       #   class, which {Datum#load} leaves to field_struct's defaults
       # @raise [ArgumentError] from {Resolution.check}
       def writer(writer_schema, reader)
-        json = writer_schema.is_a?(::String) ? writer_schema : JSON.generate(writer_schema)
+        # A frozen copy, so a caller changing its String can't strand the entry.
+        json = -(writer_schema.is_a?(::String) ? writer_schema : JSON.generate(writer_schema))
         key = [json, reader]
         hit = @writers[key]
         return hit if hit
@@ -91,21 +91,25 @@ module FieldStruct
         skip = reader.records.transform_values { |names| names.map { |name| absent.fetch(name, []) }.reduce(:&).freeze }.freeze
         entry = [parsed, skip].freeze
         @lock.synchronize do
-          @writers.clear if @writers.size >= WRITERS_MAX
+          # Oldest first: a Hash keeps insertion order.
+          @writers.shift while @writers.size >= WRITERS_MAX
           @writers[key] = entry
         end
         entry
       end
 
-      private
-
+      # What an entry is valid for, per class: its Field objects, its
+      # serialization mapping and its name.
+      #
       # @param klass [Class<FieldStruct::Base>]
       # @param serialization [Symbol]
       # @return [Array(Array<FieldStruct::Field>, Object, String)]
-      def stamp(klass, serialization)
+      def self.stamp(klass, serialization)
         meta = klass.metadata
         [meta.to_a.freeze, meta.serialization(serialization), klass.name].freeze
       end
+
+      private
 
       # @param stamps [Hash{Class<FieldStruct::Base>=>Array<Object>}]
       # @param serialization [Symbol]
