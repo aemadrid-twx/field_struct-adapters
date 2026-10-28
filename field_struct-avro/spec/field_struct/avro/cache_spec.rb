@@ -44,6 +44,14 @@ RSpec.describe FieldStruct::Avro::Cache do
     expect(FieldStruct::Avro.schema(box)['fields'].map { |field| field['name'] }).to eq(%w[id part later])
   end
 
+  it "freezes only the copy it made, never an object of the caller's" do
+    mine = Object.new
+    copy = FieldStruct::Avro::Cache.deep_freeze(FieldStruct::Avro::Cache.deep_copy({'a' => ['s', mine]}))
+
+    expect([copy, copy['a'], copy['a'][0]]).to all(be_frozen)
+    expect(mine).not_to be_frozen
+  end
+
   it 'picks up fields added or re-declared after first use, in the class or a nested one' do
     round_trip(box.new(id: 1, part: {sku: 'a'}))
 

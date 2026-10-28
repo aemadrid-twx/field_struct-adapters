@@ -193,14 +193,18 @@ module FieldStruct
         end
       end
 
-      # @param value [Object] a schema, or part of one
-      # @return [Object] +value+, frozen all the way down
+      # Freezes the Hashes, Arrays and Strings {.deep_copy} made, and nothing
+      # else: anything it passed through is still the caller's object.
+      #
+      # @param value [Object] a copy from {.deep_copy}
+      # @return [Object] +value+
       def self.deep_freeze(value)
         case value
-        when ::Hash then value.each_value { |item| deep_freeze(item) }
-        when ::Array then value.each { |item| deep_freeze(item) }
+        when ::Hash then value.each_value { |item| deep_freeze(item) }.freeze
+        when ::Array then value.each { |item| deep_freeze(item) }.freeze
+        when ::String then value.freeze
+        else value
         end
-        value.freeze
       end
 
       private

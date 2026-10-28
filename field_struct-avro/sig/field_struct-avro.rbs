@@ -158,9 +158,12 @@ module FieldStruct
       # _@return_ — a copy sharing nothing mutable with +value+
       def self.deep_copy: (Object value) -> Object
 
-      # _@param_ `value` — a schema, or part of one
+      # Freezes the Hashes, Arrays and Strings {.deep_copy} made, and nothing
+      # else: anything it passed through is still the caller's object.
       # 
-      # _@return_ — +value+, frozen all the way down
+      # _@param_ `value` — a copy from {.deep_copy}
+      # 
+      # _@return_ — +value+
       def self.deep_freeze: (Object value) -> Object
 
       # A reader entry. (A plain class, not a Struct: sord writes a Struct
