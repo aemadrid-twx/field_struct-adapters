@@ -44,13 +44,13 @@ module FieldStruct
     # for +JSON.generate+ or a schema registry).
     #
     # @param klass [Class<FieldStruct::Base>]
-    # @param serialization [Symbol]
+    # @param serialization [Symbol, String]
     # @param timestamp [Symbol] +:micros+, +:nanos+ or +:millis+
     # @return [Hash{String=>Object}]
     # @raise [ArgumentError] when a field has no Avro mapping, or the schema
     #   isn't valid Avro (say, a typo in an +avro: {type:}+ option)
     def self.schema(klass, serialization: :avro, timestamp: :micros)
-      check(klass, timestamp)
+      serialization = check(klass, serialization, timestamp)
       # Parsing (cached) here makes a bad option fail where the schema is
       # asked for, at boot or registration, not at the first encode.
       CACHE.reader(klass, serialization, timestamp)
@@ -58,30 +58,30 @@ module FieldStruct
     end
 
     # @param struct [FieldStruct::Base]
-    # @param serialization [Symbol]
+    # @param serialization [Symbol, String]
     # @param timestamp [Symbol]
     # @return [Hash{String=>Object}] the Avro datum for +struct+
     def self.to_datum(struct, serialization: :avro, timestamp: :micros)
-      check(struct.class, timestamp)
+      serialization = check(struct.class, serialization, timestamp)
       Datum.new(serialization:, timestamp:).dump(struct)
     end
 
     # @param klass [Class<FieldStruct::Base>]
     # @param datum [Hash{String=>Object}] as an Avro reader returns it
-    # @param serialization [Symbol]
+    # @param serialization [Symbol, String]
     # @return [FieldStruct::Base]
     def self.from_datum(klass, datum, serialization: :avro)
-      check(klass)
+      serialization = check(klass, serialization)
       Datum.new(serialization:).load(klass, datum)
     end
 
     # @param struct [FieldStruct::Base]
-    # @param serialization [Symbol]
+    # @param serialization [Symbol, String]
     # @param timestamp [Symbol]
     # @return [String] the Avro binary encoding, without a container or header
     # @raise [ArgumentError] as {.schema} does, and when a time is too precise
     def self.encode(struct, serialization: :avro, timestamp: :micros)
-      check(struct.class, timestamp)
+      serialization = check(struct.class, serialization, timestamp)
       parsed = CACHE.reader(struct.class, serialization, timestamp).parsed
       io = StringIO.new(+'', 'wb')
       ::Avro::IO::DatumWriter.new(parsed).write(to_datum(struct, serialization:, timestamp:), ::Avro::IO::BinaryEncoder.new(io))
@@ -93,13 +93,13 @@ module FieldStruct
     # @param writer_schema [Hash{String=>Object}, String, Object, nil] the schema the bytes were
     #   written with (a parsed +::Avro::Schema+ works too), when it differs from
     #   +klass+'s (Avro resolves the two)
-    # @param serialization [Symbol]
+    # @param serialization [Symbol, String]
     # @param timestamp [Symbol]
     # @return [FieldStruct::Base]
     # @raise [ArgumentError] as {.schema} does, and when the avro gem would
     #   read a field as the wrong value (see {Resolution})
     def self.decode(klass, bytes, writer_schema: nil, serialization: :avro, timestamp: :micros)
-      check(klass, timestamp)
+      serialization = check(klass, serialization, timestamp)
       entry = CACHE.reader(klass, serialization, timestamp)
       reader = entry.parsed
       # A field the writer lacked takes field_struct's own default, which
@@ -110,16 +110,23 @@ module FieldStruct
     end
 
     # @param klass [Object]
+    # @param serialization [Object]
     # @param timestamp [Object]
-    # @return [void]
+    # @return [Symbol] the serialization, as a Symbol
     # @raise [ArgumentError]
-    def self.check(klass, timestamp = :micros)
+    def self.check(klass, serialization, timestamp = :micros)
       unless klass.is_a?(::Class) && klass < FieldStruct::Base
         raise ArgumentError, "FieldStruct::Avro expects a FieldStruct::Base subclass, got #{klass.inspect}"
       end
-      return if TIMESTAMPS.include?(timestamp)
+      unless TIMESTAMPS.include?(timestamp)
+        raise ArgumentError, "FieldStruct::Avro timestamp: must be one of #{TIMESTAMPS.inspect}, got #{timestamp.inspect}"
+      end
 
-      raise ArgumentError, "FieldStruct::Avro timestamp: must be one of #{TIMESTAMPS.inspect}, got #{timestamp.inspect}"
+      # A String works, as in FieldStruct::JSONSchema.generate, and shares the Symbol's cache entries.
+      serialization = serialization.to_sym if serialization.is_a?(::String)
+      return serialization if serialization.is_a?(::Symbol)
+
+      raise ArgumentError, "FieldStruct::Avro expects serialization: to be a Symbol, got #{serialization.inspect}"
     end
     private_class_method :check
 
