@@ -626,7 +626,16 @@ RSpec.describe FieldStruct::JSONSchema do
       # Alternation is fine outside a repeated group.
       /\Aa+|b+\z/ => '^a+|b+$',
       /\A(?:jpg|png)\z/ => '^(?:jpg|png)$',
-      /\A(?:a|b)?\z/ => '^(?:a|b)?$'
+      /\A(?:a|b)?\z/ => '^(?:a|b)?$',
+      # A repeated group is fine too when it can split an input only one way:
+      # its alternatives start differently, and each variable repeat stops at
+      # a character that can't continue it.
+      /\A(?:a|b){2}\z/ => '^(?:a|b){2}$',
+      /\A[a-z0-9]+(?:-[a-z0-9]+)*\z/ => '^[a-z0-9]+(?:-[a-z0-9]+)*$',
+      /\A(?:\d{1,3}\.){3}\d{1,3}\z/ => '^(?:\d{1,3}\.){3}\d{1,3}$',
+      /\A(?:[a-z0-9-]+\.)+[a-z]{2,}\z/ => '^(?:[a-z0-9-]+\.)+[a-z]{2,}$',
+      /\A"(?:[^"\\]|\\.)*"\z/ => '^"(?:[^"\\\\]|\\\\[^\n])*"$',
+      /\A\d*\d*x\z/ => '^\d*\d*x$' # two overlapping repeats: quadratic at worst
     }.each do |regexp, pattern|
       it "translates #{regexp.inspect}" do
         expect(described_class.pattern_for(regexp)).to eq(pattern)
@@ -647,7 +656,11 @@ RSpec.describe FieldStruct::JSONSchema do
      /\A(a+)+\z/, /\A(x+x+)+y\z/, /\A([^\n]*a){20}\z/, /\A(\w+\s?)+\z/, /\A((a+)b)+\z/, /\A(a?){20}\z/, /\A(a{2,3})+\z/,
      # Alternatives that can match the same text, repeated: just as exponential.
      /\A(?:a|a)+\z/, /\A(?:\w|\d)+\z/, /\A(?:a|aa)+\z/, /\A(?:a|b|ab)*\z/, /\A(?:ab|abab)+\z/, /\A(?:s|S)+\z/i,
-     /\A(?:(?:a|aa){2}b)+\z/, /\A(?:a|aa){20}\z/, /\A(?:a|b){2}\z/].each do |regexp|
+     /\A(?:(?:a|aa){2}b)+\z/, /\A(?:a|aa){20}\z/,
+     # A variable repeat that can run into what follows it, or the next iteration.
+     /\A(?:a?a)+\z/, /\A(?:\d+\.?)+\z/, /\A(?:a+b|a)+\z/, /\A(?:[a-z]+\d*)+\z/i,
+     # Three or more overlapping unbounded repeats in a row: polynomial (2.4 s at 120 characters).
+     /\A\d*\d*\d*x\z/, /\A\d*\w*\d+x\z/, /\A(?:a)?\w+\d*\d*!\z/].each do |regexp|
       it "gives up on #{regexp.inspect}" do
         expect(described_class.pattern_for(regexp)).to be_nil
       end

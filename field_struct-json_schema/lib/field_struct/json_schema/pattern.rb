@@ -69,6 +69,17 @@ module FieldStruct
       # Raised internally when the source has no exact translation.
       class Unsupported < StandardError; end
 
+      # Character sets for the ReDoS checks: one bit per ASCII character,
+      # and bit 128 for "some non-ASCII character" (all of them count as
+      # one, which can only make two sets overlap more).
+      # @return [Integer]
+      NON_ASCII = 1 << 128
+      # @return [Integer]
+      ANY = (1 << 129) - 1
+      # Single-character escapes in an emitted atom, and what they stand for.
+      # @return [Hash{String=>String}]
+      ESCAPED = {'n' => "\n", 'r' => "\r", 't' => "\t", 'f' => "\f", 'v' => "\v", 'b' => "\b", '0' => "\0"}.freeze
+
       # @param source [String] a Regexp source
       # @param fold_case [Boolean] whether the Regexp is +/i+
       def initialize(source, fold_case:)
@@ -99,8 +110,16 @@ module FieldStruct
         # (:lazy_ok when a "?" after it would make it lazy).
         @quantifiable = false
         @quantified = false
+        # What each open group (and the top level) holds, for the ReDoS
+        # checks: its alternatives, each a list of items (see #item).
+        @frames = [[[]]]
+        @sequences = []
         step while @pos < @source.length
-        @in_class || !@groups.empty? ? nil : @out
+        return nil if @in_class || !@groups.empty?
+
+        @sequences.concat(@frames.pop)
+        unsupported if @sequences.any? { |items| polynomial?(items) }
+        @out
       rescue Unsupported
         nil
       end
@@ -133,6 +152,7 @@ module FieldStruct
           # Alternatives can match the same text ((a|aa)), so a group holding
           # one counts as a variable repeat: see #repeats.
           @groups.last[2] = true unless @groups.empty?
+          @frames.last << []
           plain_token('|')
         when '.' then atom { @out << '[^\n]' }
         when '^' then plain_token(LINE_START)
@@ -149,8 +169,18 @@ module FieldStruct
         @atom_start = @out.length
         @repeating_group = false
         yield
+        # A class's set is read once it closes (#close_class).
+        @frames.last.last << item(@in_class ? nil : atom_set(@out[@atom_start..]))
         @quantifiable = true
         @quantified = false
+      end
+
+      # @param set [Integer, nil] the characters an atom matches
+      # @param alternatives [Array<Array<Hash>>, nil] a group's, for a group
+      # @return [Hash{Symbol=>Object}] an atom or a group, matched +min+ to
+      #   +max+ times
+      def item(set, alternatives = nil)
+        {set: set, min: 1, max: 1, alternatives: alternatives}
       end
 
       # Emits something a quantifier may not follow (an anchor, +|+).
@@ -174,6 +204,9 @@ module FieldStruct
         # Stacked (a**), possessive (a*+) or on an anchor or lookaround.
         unsupported if !@quantifiable || @quantified
         repeats(more_than_once: char != '?', variable: true)
+        last = @frames.last.last.last
+        last[:min] = char == '+' ? 1 : 0
+        last[:max] = char == '?' ? 1 : Float::INFINITY
         @out << char
         @quantified = :lazy_ok
       end
@@ -182,7 +215,8 @@ module FieldStruct
       # group that holds a variable repeat, like +(a+)++ or +(\w*x){20}+,
       # lets a backtracking engine split one input exponentially many ways:
       # Ruby's memoization hides it, but a JavaScript validator would hang
-      # on a crafted input. So those get no pattern. An exact count over a
+      # on a crafted input. So those get no pattern, unless the group can
+      # split an input only one way ({#unambiguous?}). An exact count over a
       # plain atom (+(\d{3}-){2}+) splits only one way, so it doesn't mark
       # its group. A group holding an alternation counts as varying too, since
       # +(a|aa)+ can split one input many ways.
@@ -192,7 +226,7 @@ module FieldStruct
       #   +{n,m}+), which marks the enclosing group
       # @return [void]
       def repeats(more_than_once:, variable:)
-        unsupported if more_than_once && @repeating_group
+        unsupported if more_than_once && @repeating_group && !unambiguous?(@frames.last.last.last)
         @groups.last[2] = true if variable && !@groups.empty?
       end
 
@@ -215,6 +249,9 @@ module FieldStruct
                  high.empty? ? Float::INFINITY : high.to_i
                end
         repeats(more_than_once: most > 1, variable: !comma.empty? && most != low.to_i)
+        last = @frames.last.last.last
+        last[:min] = low.to_i
+        last[:max] = most
         @pos += body.length
         @out << '{' << body
         # "{n}?" is an optional {n} in Ruby but a lazy {n} in JavaScript, so
@@ -240,6 +277,7 @@ module FieldStruct
           end
         end
         @groups.push([kind, start, false])
+        @frames.push([[]])
         @repeating_group = false
         @quantifiable = false
         @quantified = false
@@ -263,6 +301,10 @@ module FieldStruct
       # @return [void]
       def close_group
         kind, start, repeating = @groups.pop || unsupported
+        alternatives = @frames.pop
+        @sequences.concat(alternatives)
+        # A lookaround matches no characters, so it isn't an item.
+        @frames.last.last << item(alternatives.flatten.reduce(0) { |set, inner| set | inner[:set] }, alternatives) if kind == :plain
         @out << ')'
         @groups.last[2] = true if repeating && !@groups.empty?
         @quantifiable = kind == :plain
@@ -311,6 +353,7 @@ module FieldStruct
         letter = @source[@class_source...(@pos - 1)][/\A([A-Za-z])(?:-\1)?\z/, 1]
         @folded[@atom_start] = [letter.downcase] if @fold_case && letter && !@class_negated
         @out << ']'
+        @frames.last.last.last[:set] = atom_set(@out[@atom_start..])
         @repeating_group = false
         @quantifiable = true
         @quantified = false
@@ -468,6 +511,163 @@ module FieldStruct
         unsupported unless char.match?(/\A[A-Za-z]\z/)
         true
       end
+
+      # A repeated group splits one input only one way when its alternatives
+      # start with different characters, none can match nothing, and each
+      # variable repeat inside is one atom whose characters can't also start
+      # what follows it (the next iteration, at the end): +(?:\d{1,3}\.){3}+,
+      # +(?:-[a-z0-9]+)*+, +(?:[^"\\]|\\.)*+. Anything else, a group inside
+      # included, counts as ambiguous.
+      #
+      # @param group [Hash] the repeated group's item
+      # @return [Boolean]
+      def unambiguous?(group)
+        alternatives = group[:alternatives]
+        return false unless alternatives
+        return false if alternatives.any? { |items| items.empty? || items.all? { |inner| nullable?(inner) } }
+        return false if alternatives.flatten.any? { |inner| inner[:alternatives] }
+
+        firsts = alternatives.map { |items| first(items) }
+        return false unless firsts.combination(2).all? { |one, other| one.nobits?(other) }
+
+        again = firsts.reduce(0, :|)
+        alternatives.all? do |items|
+          items.each_with_index.all? do |inner, index|
+            inner[:min] == inner[:max] || inner[:set].nobits?(first(items[(index + 1)..], again))
+          end
+        end
+      end
+
+      # A polynomial blowup instead: three or more adjacent unbounded repeats
+      # that share a character (+\d*\d*\d*x+) can split one input in
+      # O(n^k) ways, slow enough on a long one. Two (quadratic) pass.
+      #
+      # @param items [Array<Hash>] one alternative
+      # @return [Boolean]
+      def polynomial?(items)
+        shared = nil
+        run = 0
+        items.each do |inner|
+          if inner[:max] == Float::INFINITY
+            if shared&.anybits?(inner[:set])
+              shared &= inner[:set]
+              run += 1
+              return true if run >= 3
+            else
+              shared = inner[:set]
+              run = 1
+            end
+          elsif !nullable?(inner) && shared&.nobits?(inner[:set])
+            shared = nil
+            run = 0
+          end
+        end
+        false
+      end
+
+      # @param items [Array<Hash>]
+      # @param after [Integer] what can start once +items+ all match nothing
+      # @return [Integer] the characters the sequence can start with
+      def first(items, after = 0)
+        set = 0
+        items.each do |inner|
+          set |= inner[:alternatives] ? inner[:alternatives].reduce(0) { |all, nested| all | first(nested) } : inner[:set]
+          return set unless nullable?(inner)
+        end
+        set | after
+      end
+
+      # @param inner [Hash]
+      # @return [Boolean]
+      def nullable?(inner)
+        inner[:min].zero? || inner[:alternatives]&.any? { |items| items.all? { |nested| nullable?(nested) } } || false
+      end
+
+      # The characters one emitted ECMA-262 atom matches: a character, an
+      # escape, a class or an astral +(?:…)+. Anything unexpected is {ANY}.
+      #
+      # @param text [String]
+      # @return [Integer]
+      def atom_set(text)
+        return NON_ASCII if text.start_with?('(')
+        return class_set(text) if text.start_with?('[')
+
+        chars = scan_member(text, 0)
+        chars && chars[1] == text.length ? chars[0] : ANY
+      end
+
+      # @param text [String] +[...]+ or +[^...]+
+      # @return [Integer]
+      def class_set(text)
+        negated = text[1] == '^'
+        pos = negated ? 2 : 1
+        set = 0
+        while pos < text.length - 1
+          low, pos = scan_member(text, pos) || (return ANY)
+          if text[pos] == '-' && pos + 1 < text.length - 1
+            high, pos = scan_member(text, pos + 1) || (return ANY)
+            set |= span(low, high)
+          else
+            set |= low
+          end
+        end
+        negated ? (ANY ^ set) | NON_ASCII : set
+      end
+
+      # @param low [Integer] a one-character set
+      # @param high [Integer] a one-character set
+      # @return [Integer] the range between them
+      def span(low, high)
+        return ANY unless low.positive? && high.positive? && low.nobits?(low - 1) && high.nobits?(high - 1)
+        return NON_ASCII if low == NON_ASCII
+
+        top = high == NON_ASCII ? 127 : high.bit_length - 1
+        set = (((1 << (top + 1)) - 1) ^ (low - 1))
+        high == NON_ASCII ? set | NON_ASCII : set
+      end
+
+      # @param text [String]
+      # @param pos [Integer]
+      # @return [Array(Integer, Integer), nil] the member's set and where
+      #   the next one starts
+      def scan_member(text, pos)
+        char = text[pos] or return nil
+        return [char.ord < 128 ? 1 << char.ord : NON_ASCII, pos + 1] unless char == '\\'
+
+        escaped = text[pos + 1] or return nil
+        case escaped
+        when 'd' then [digits, pos + 2]
+        when 'D' then [(ANY ^ digits) | NON_ASCII, pos + 2]
+        when 'w' then [word, pos + 2]
+        when 'W' then [(ANY ^ word) | NON_ASCII, pos + 2]
+        when 's' then [chars("\t\n\v\f\r "), pos + 2]
+        when 'S' then [(ANY ^ chars("\t\n\v\f\r ")) | NON_ASCII, pos + 2]
+        when 'x' then code(text[pos + 2, 2], pos + 4)
+        when 'u' then code(text[pos + 2, 4], pos + 6)
+        when 'c' then [1 << (text[pos + 2].ord & 0x1F), pos + 3]
+        else [1 << ESCAPED.fetch(escaped, escaped).ord, pos + 2]
+        end
+      end
+
+      # @param hex [String, nil]
+      # @param after [Integer]
+      # @return [Array(Integer, Integer), nil]
+      def code(hex, after)
+        return nil unless hex&.match?(/\A\h+\z/)
+
+        value = hex.to_i(16)
+        [value < 128 ? 1 << value : NON_ASCII, after]
+      end
+
+      # @return [Integer]
+      def digits = chars('0123456789')
+
+      # @return [Integer]
+      def word = chars(['0'..'9', 'a'..'z', 'A'..'Z'].flat_map(&:to_a).join << '_')
+
+      # @param list [String]
+      # @return [Integer]
+      def chars(list) = list.each_char.reduce(0) { |set, char| set | (1 << char.ord) }
 
       # @return [String, nil]
       def take
