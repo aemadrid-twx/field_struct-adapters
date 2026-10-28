@@ -89,11 +89,9 @@ module FieldStruct
 
     # _@param_ `value` — part of a generated schema
     # 
-    # _@param_ `freeze` — freeze the copy all the way down
-    # 
     # _@return_ — +value+ with every Hash, Array and String copied, so a
     # caller can't reach the field options the schema was built from
-    def self.deep_copy: (Object value, ?freeze: bool) -> Object
+    def self.deep_copy: (Object value) -> Object
 
     # The built schema per class and serialization, so {.generate} only
     # copies it. An entry is rebuilt when any class it covers changes its

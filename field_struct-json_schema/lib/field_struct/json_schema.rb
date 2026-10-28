@@ -142,21 +142,18 @@ module FieldStruct
     end
 
     # @param value [Object] part of a generated schema
-    # @param freeze [Boolean] freeze the copy all the way down
     # @return [Object] +value+ with every Hash, Array and String copied, so a
     #   caller can't reach the field options the schema was built from
     # @api private
-    def self.deep_copy(value, freeze: false)
-      copy =
-        case value
-        # A Hash freezes its own copy of a String key, so the keys are already
-        # unreachable from the field options and can be shared.
-        when ::Hash then value.to_h { |key, item| [key, deep_copy(item, freeze:)] }
-        when ::Array then value.map { |item| deep_copy(item, freeze:) }
-        when ::String then value.dup
-        else value
-        end
-      freeze ? copy.freeze : copy
+    def self.deep_copy(value)
+      case value
+      # A Hash freezes its own copy of a String key, so the keys are already
+      # unreachable from the field options and can be shared.
+      when ::Hash then value.to_h { |key, item| [key, deep_copy(item)] }
+      when ::Array then value.map { |item| deep_copy(item) }
+      when ::String then value.dup
+      else value
+      end
     end
 
     # The built schema per class and serialization, so {.generate} only
@@ -204,7 +201,7 @@ module FieldStruct
         # Builder puts field defaults and options (enum:, in:, json_schema:)
         # into the schema as they are; copy before freezing, so the class's
         # own objects stay unfrozen.
-        schema = JSONSchema.deep_copy(built, freeze: true)
+        schema = deep_freeze(JSONSchema.deep_copy(built))
         entry = Entry.new(schema, builder.stamps.freeze)
         @lock.synchronize { @entries[key] = entry }
         schema
@@ -219,6 +216,23 @@ module FieldStruct
       end
 
       private
+
+      # Only on a miss, so {JSONSchema.deep_copy}, which every
+      # {JSONSchema.generate} runs, stays a plain copy.
+      #
+      # @param value [Object]
+      # @return [Object] +value+, frozen all the way down
+      def deep_freeze(value)
+        case value
+        when ::Hash
+          value.each do |key, item|
+            deep_freeze(key)
+            deep_freeze(item)
+          end
+        when ::Array then value.each { |item| deep_freeze(item) }
+        end
+        value.freeze
+      end
 
       # @param stamps [Hash{Class<FieldStruct::Base>=>Array<Object>}]
       # @param serialization [Symbol]
