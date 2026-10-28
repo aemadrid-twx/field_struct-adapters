@@ -13,6 +13,11 @@ module FieldStruct
       # @return [Hash{Symbol=>Object}]
       JSON_LOAD = {mode: :compat, decimal_class: ::BigDecimal}.freeze
 
+      # A time too precise for its field, raised deep in {#dump_value} and
+      # turned into an ArgumentError naming the field by {#dump}.
+      class Imprecise < ArgumentError; end
+      private_constant :Imprecise
+
       # @param serialization [Symbol]
       # @param timestamp [Symbol]
       # @param absent [Hash{Class<FieldStruct::Base>=>Array<String>}] the Avro
@@ -26,9 +31,12 @@ module FieldStruct
 
       # @param struct [FieldStruct::Base]
       # @return [Hash{String=>Object}]
+      # @raise [ArgumentError] naming the field, when a time is too precise
       def dump(struct)
         properties(struct.class).to_h do |property|
           [property.key, dump_value(struct.public_send(property.field.name), property.node, Options.field(property))]
+        rescue Imprecise => e
+          raise ArgumentError, "FieldStruct::Avro: #{struct.class.name || struct.class.inspect}##{property.field.name} #{e.message}"
         end
       end
 
@@ -149,8 +157,8 @@ module FieldStruct
         precision = Options.timestamp(avro, @timestamp)
         return time if (time.nsec % NANOS.fetch(precision)).zero?
 
-        raise ArgumentError, "FieldStruct::Avro: #{time.iso8601(9)} has more precision than timestamp-#{precision}; " \
-                             'round it, or use timestamp: :nanos'
+        raise Imprecise, "is #{time.iso8601(9)}, which has more precision than timestamp-#{precision}; " \
+                         'round it, or use timestamp: :nanos'
       end
 
       # A field whose +avro: {type:}+ replaces its mapping: the user chose the
