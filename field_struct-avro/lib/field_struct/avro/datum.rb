@@ -95,8 +95,26 @@ module FieldStruct
         when FieldStruct::Types::Time then exact_time(value, node)
         when FieldStruct::Types::DateTime then exact_time(value.to_time, node)
         when FieldStruct::Types::Symbol then value.to_s
-        when FieldStruct::Types::Value then Oj.dump(value, mode: :compat)
+        when FieldStruct::Types::Value then Oj.dump(json_value(value), mode: :compat)
         else value
+        end
+      end
+
+      # A +:value+ travels as the JSON text field_struct's +to_json+ writes
+      # for it: ISO 8601 times, plain decimals. This follows field_struct's
+      # private +Base#json_value+ for a field with no +format:+.
+      #
+      # @param value [Object]
+      # @return [Object]
+      def json_value(value)
+        case value
+        when nil, true, false, ::String, ::Integer, ::Float then value
+        when ::Symbol then value.to_s
+        when ::BigDecimal then value.to_s('F')
+        when ::DateTime, ::Date, ::Time then value.iso8601
+        when ::Array then value.map { |item| json_value(item) }
+        when ::Hash then value.transform_values { |item| json_value(item) }
+        else value.respond_to?(:as_json) ? value.as_json : value
         end
       end
 
