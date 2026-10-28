@@ -165,6 +165,17 @@ RSpec.describe FieldStruct::Avro, '.schema' do
     expect { described_class.schema(bytes) }.to raise_error(ArgumentError, /both become Avro string/)
   end
 
+  it 'writes a float default as a double, even when given as an integer' do
+    klass = struct('Ratio') do
+      optional :ratio, :float, default: 1
+      optional :share, :float, default: 0.25
+    end
+
+    defaults = schema_of(klass)['fields'].map { |field| field['default'] }
+    expect(defaults).to eq([1.0, 0.25])
+    expect(defaults.first).to be_a(Float)
+  end
+
   it 'refuses a union of structs where an earlier one would swallow a later one' do
     small = struct('Pay::Small') { required :a, :string }
     big = struct('Pay::Big') do

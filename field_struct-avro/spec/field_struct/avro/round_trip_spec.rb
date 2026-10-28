@@ -67,6 +67,48 @@ RSpec.describe FieldStruct::Avro, 'encode and decode' do
     expect(round_trip(tick, timestamp: :nanos).at.nsec).to eq(123_456_789)
   end
 
+  it 'honours a per-field avro: {timestamp:}, refusing what it would drop' do
+    klass = struct('Log') do
+      required :at, :time, avro: {timestamp: :millis}
+      required :seen, :time
+    end
+    exact = klass.new(at: '2026-10-25T21:55:12.123Z', seen: '2026-10-25T21:55:12.123456Z')
+
+    expect(round_trip(exact)).to eq(exact)
+    expect { described_class.encode(klass.new(at: '2026-10-25T21:55:12.1234Z', seen: exact.seen)) }
+      .to raise_error(ArgumentError, /more precision than timestamp-millis/)
+  end
+
+  it 'round-trips a :datetime in its zone, and a decimal scaled only by avro: {scale:}' do
+    klass = struct('Booking') do
+      required :at, :datetime, zone: 'America/Denver'
+      required :fee, :big_decimal, avro: {scale: 2}
+    end
+    booking = klass.new(at: '2026-07-01T08:00:00', fee: '12.5')
+
+    back = round_trip(booking)
+
+    expect(back).to eq(booking)
+    expect(back.at.offset).to eq(Rational(-6, 24))
+    expect(described_class.schema(klass)['fields'][1]['type']).to include('logicalType' => 'decimal', 'scale' => 2)
+  end
+
+  it 'round-trips renamed fields, through nested structs, unions and arrays' do
+    item = struct('Ren::Item') do
+      required :sku_code, :string
+      serialize :avro, sku_code: 'skuCode'
+    end
+    klass = struct('Ren::Cart') do
+      required :line_items, :array, of: item
+      required :first_pick, :union, of: [item, :integer]
+      serialize :avro, line_items: 'lineItems', first_pick: 'firstPick'
+    end
+    cart = klass.new(line_items: [{sku_code: 'a'}], first_pick: {sku_code: 'b'})
+
+    expect(described_class.to_datum(cart)).to eq('lineItems' => [{'skuCode' => 'a'}], 'firstPick' => {'skuCode' => 'b'})
+    expect(round_trip(cart)).to eq(cart)
+  end
+
   it "gives a time back in its field's zone:" do
     klass = struct('Shift') do
       required :starts, :time, zone: 'America/Denver'
