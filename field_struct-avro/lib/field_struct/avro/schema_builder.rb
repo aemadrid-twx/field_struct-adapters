@@ -73,7 +73,7 @@ module FieldStruct
         return full_name if @defined.key?(full_name)
         raise ArgumentError, 'FieldStruct::Avro cannot describe a recursive anonymous struct; assign it to a constant' if @inlining.include?(klass)
 
-        @defined[full_name] = named ? klass : true
+        @defined[full_name] = named ? klass : 'an anonymous struct'
         @classes[klass] = full_name if named
         @inlining.push(klass)
         out = {'type' => 'record', 'name' => name}
@@ -304,7 +304,7 @@ module FieldStruct
         full_name = [namespace, name].compact.join('.')
         return full_name if @defined.key?(full_name)
 
-        @defined[full_name] = true
+        @defined[full_name] = 'an enum'
         out = {'type' => 'enum', 'name' => name, 'symbols' => symbols}
         out['default'] = avro[:enum_default].to_s if avro.key?(:enum_default)
         out

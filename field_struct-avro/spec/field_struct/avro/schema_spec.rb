@@ -141,6 +141,11 @@ RSpec.describe FieldStruct::Avro, '.schema' do
       required :top, line
     end
     expect { described_class.schema(both) }.to raise_error(ArgumentError, /Line and Billing::Line both become Avro Billing\.Line/)
+
+    holder = struct('Outer') { required :x, :symbol, enum: %i[a b] }
+    struct('Outer_x') { required :n, :integer }
+    holder.required :y, Outer_x
+    expect { described_class.schema(holder) }.to raise_error(ArgumentError, /Outer_x and an enum both become Avro Outer_x/)
   end
 
   it 'names an anonymous nested struct after its record and field' do
