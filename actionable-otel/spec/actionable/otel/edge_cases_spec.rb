@@ -30,7 +30,10 @@ RSpec.describe Actionable::Otel, 'edge cases' do
   end
 
   it 'names a step that runs an anonymous action generically' do
-    child = Class.new(Actionable::Action) { step(:go) && define_method(:go) { nil } }
+    child = Class.new(Actionable::Action) do
+      step :go
+      define_method(:go) { nil }
+    end
     stub_const('Parent', Class.new(Actionable::Action) { step child })
     Parent.run
 
