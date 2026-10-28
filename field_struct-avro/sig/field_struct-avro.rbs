@@ -153,6 +153,19 @@ module FieldStruct
       # _@param_ `serialization`
       def self.stamp: (singleton(FieldStruct::Base) klass, Symbol serialization) -> [::Array[FieldStruct::Field], Object, String]
 
+      # _@param_ `value` — a schema, or part of one
+      # 
+      # _@return_ — a copy sharing nothing mutable with +value+
+      def self.deep_copy: (Object value) -> Object
+
+      # Freezes the Hashes, Arrays and Strings {.deep_copy} made, and nothing
+      # else: anything it passed through is still the caller's object.
+      # 
+      # _@param_ `value` — a copy from {.deep_copy}
+      # 
+      # _@return_ — +value+
+      def self.deep_freeze: (Object value) -> Object
+
       # A reader entry. (A plain class, not a Struct: sord writes a Struct
       # constant as +::Struct+ without its type parameter, which rbs refuses.)
       class Reader
@@ -161,7 +174,14 @@ module FieldStruct
         # _@param_ `records`
         # 
         # _@param_ `stamps`
-        def initialize: (Object parsed, ::Hash[singleton(FieldStruct::Base), ::Array[String]] records, ::Hash[singleton(FieldStruct::Base), ::Array[Object]] stamps) -> void
+        # 
+        # _@param_ `schema`
+        def initialize: (
+                          Object parsed,
+                          ::Hash[singleton(FieldStruct::Base), ::Array[String]] records,
+                          ::Hash[singleton(FieldStruct::Base), ::Array[Object]] stamps,
+                          ::Hash[String, Object] schema
+                        ) -> void
 
         # _@return_ — the +::Avro::Schema+ (the avro gem ships no
         # signatures, so the sig can't name its class)
@@ -172,6 +192,10 @@ module FieldStruct
         attr_reader records: ::Hash[singleton(FieldStruct::Base), ::Array[String]]
 
         attr_reader stamps: ::Hash[singleton(FieldStruct::Base), ::Array[Object]]
+
+        # _@return_ — the schema {FieldStruct::Avro.schema}
+        # copies, deeply frozen
+        attr_reader schema: ::Hash[String, Object]
       end
 
       # A properties entry: the list and the stamp it is valid for.
