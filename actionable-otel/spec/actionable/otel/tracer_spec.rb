@@ -7,6 +7,8 @@ RSpec.describe Actionable::Otel do
     example.run
   ensure
     OpenTelemetry.tracer_provider = original
+    # Drop a stub's tracer, so a broken cache fails only here.
+    described_class.instance_variable_set(:@tracer, nil)
   end
 
   it 'follows a provider installed later' do

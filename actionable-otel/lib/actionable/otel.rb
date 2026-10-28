@@ -139,8 +139,8 @@ module Actionable
       # @return [Object] an +OpenTelemetry::Trace::Tracer+
       def tracer
         provider = OpenTelemetry.tracer_provider
-        cached_provider, cached = @tracer
-        return cached if cached_provider.equal?(provider)
+        pair = @tracer
+        return pair[1] if pair && pair[0].equal?(provider)
 
         made = provider.tracer(name: TRACER_NAME, version: VERSION)
         @tracer = [provider, made].freeze
