@@ -62,7 +62,7 @@ module FieldStruct
     # 
     # _@param_ `bytes` — binary from {.encode}
     # 
-    # _@param_ `writer_schema` — the schema the bytes were written with, when it differs from +klass+'s (Avro resolves the two)
+    # _@param_ `writer_schema` — the schema the bytes were written with (a parsed +::Avro::Schema+ works too), when it differs from +klass+'s (Avro resolves the two)
     # 
     # _@param_ `serialization`
     # 
@@ -70,7 +70,7 @@ module FieldStruct
     def self.decode: (
                        singleton(FieldStruct::Base) klass,
                        String bytes,
-                       ?writer_schema: (::Hash[String, Object] | String)?,
+                       ?writer_schema: (::Hash[String, Object] | String | Object)?,
                        ?serialization: Symbol,
                        ?timestamp: Symbol
                      ) -> FieldStruct::Base
@@ -126,14 +126,14 @@ module FieldStruct
       # _@param_ `timestamp`
       def reader: (singleton(FieldStruct::Base) klass, Symbol serialization, Symbol timestamp) -> FieldStruct::Avro::Cache::Reader
 
-      # _@param_ `writer_schema`
+      # _@param_ `writer_schema` — Object being an +::Avro::Schema+
       # 
       # _@param_ `reader`
       # 
       # _@return_ — the
       # parsed writer schema, and the Avro field names it lacked per struct
       # class, which {Datum#load} leaves to field_struct's defaults
-      def writer: ((::Hash[String, Object] | String) writer_schema, FieldStruct::Avro::Cache::Reader reader) -> [Object, ::Hash[singleton(FieldStruct::Base), ::Array[String]]]
+      def writer: ((::Hash[String, Object] | String | Object) writer_schema, FieldStruct::Avro::Cache::Reader reader) -> [Object, ::Hash[singleton(FieldStruct::Base), ::Array[String]]]
 
       # +FieldStruct::Introspection.properties+ for a class, which {Datum}
       # asks for every instance and nested record it converts.

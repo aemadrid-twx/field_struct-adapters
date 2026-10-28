@@ -102,7 +102,24 @@ module FieldStruct
       end
       private :parse
 
-      # @param writer_schema [Hash{String=>Object}, String]
+      # @param writer_schema [Hash{String=>Object}, String, Object] Object being an +::Avro::Schema+
+      # @return [String] the schema as JSON text
+      # @raise [ArgumentError] for anything else
+      def writer_json(writer_schema)
+        case writer_schema
+        when ::String then writer_schema
+        when ::Hash then JSON.generate(writer_schema)
+        # Registry clients hand back parsed schemas. Its JSON drops x- properties,
+        # which a writer schema doesn't need.
+        when ::Avro::Schema then writer_schema.to_s
+        else
+          raise ArgumentError, 'FieldStruct::Avro.decode: writer_schema: expects a Hash, a JSON String or an Avro::Schema, ' \
+                               "got #{writer_schema.class}"
+        end
+      end
+      private :writer_json
+
+      # @param writer_schema [Hash{String=>Object}, String, Object] Object being an +::Avro::Schema+
       # @param reader [FieldStruct::Avro::Cache::Reader]
       # @return [Array(Object, Hash{Class<FieldStruct::Base>=>Array<String>})] the
       #   parsed writer schema, and the Avro field names it lacked per struct
@@ -110,7 +127,7 @@ module FieldStruct
       # @raise [ArgumentError] from {Resolution.check}
       def writer(writer_schema, reader)
         # A frozen copy, so a caller changing its String can't strand the entry.
-        json = -(writer_schema.is_a?(::String) ? writer_schema : JSON.generate(writer_schema))
+        json = -writer_json(writer_schema)
         key = [json, reader]
         hit = @writers[key]
         return hit if hit
