@@ -49,7 +49,7 @@ It returns a Hash with String keys, a fresh copy each time: add enum values or d
 - **`required`** lists required fields without a `default:` (a default fills a missing key). Optional fields also accept `null`.
 - **Constraints:** `enum:` → `enum`; an `in:` Range → `minimum` / `maximum` / `exclusiveMaximum` (an infinite end stays open), an `in:` Array → `enum`; a Regexp `format:` → `pattern` (below). `in:` on dates, times and decimals has no keyword and is left out.
 - **Nested structs** go in `$defs` under their class name and are referenced with `$ref`; the root itself is `#`, so recursive structs work. An anonymous nested struct is inlined, and so is one named under an anonymous module.
-- **Annotations:** `description:` → `description`; a `default:` that is already what `to_json` writes → `default` (a callable, or `default: 1` on a string field, is left out); `sensitive: true` → `x-sensitive`, and the field's `default` is left out, since a schema is published (`to_json` still writes the value). `unknown_attributes :raise` → `"additionalProperties": false`.
+- **Annotations:** `description:` → `description`; a `default:` that is already what `to_json` writes → `default` (a callable, or `default: 1` on a string field, is left out); `sensitive: true` → `x-sensitive`, and the field's `default` is left out, since a schema is published (`to_json` still writes the value). Its `enum:` and `in:` values stay, as `enum`: they're the field's rule, and a validator needs them. `unknown_attributes :raise` → `"additionalProperties": false`.
 
 ## Regexp formats
 
