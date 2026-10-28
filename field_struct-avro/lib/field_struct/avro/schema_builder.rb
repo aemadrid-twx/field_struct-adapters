@@ -256,9 +256,14 @@ module FieldStruct
         scale = avro.fetch(:scale) { options.fetch(:round) { type.class.default_round } }
         return 'string' if scale.nil?
 
+        precision = avro.fetch(:precision, DEFAULT_PRECISION)
+        unless [scale, precision].all?(::Integer)
+          raise ArgumentError, "FieldStruct::Avro can't describe #{name}: decimal precision and scale must be integers, " \
+                               "got #{precision.inspect} and #{scale.inspect}"
+        end
+
         # A negative round: (to tens, hundreds) leaves no fractional digits.
         scale = [scale, 0].max
-        precision = avro.fetch(:precision, DEFAULT_PRECISION)
         raise ArgumentError, "FieldStruct::Avro can't describe #{name}: precision #{precision} must be at least 1" if precision < 1
         if scale > precision
           raise ArgumentError, "FieldStruct::Avro can't describe #{name}: scale #{scale} is more than precision #{precision}; " \
