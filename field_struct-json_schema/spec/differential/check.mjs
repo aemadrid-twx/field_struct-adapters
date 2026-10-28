@@ -6,7 +6,7 @@
 // pattern_for that gave up on everything would otherwise pass.
 import { readFileSync } from 'node:fs';
 
-// The corpus translates 346 Regexps today; well below that means pattern_for
+// The corpus translates 341 Regexps today; well below that means pattern_for
 // stopped translating, not that the corpus shrank. Raise it with the corpus.
 const MIN_TRANSLATED = 300;
 
