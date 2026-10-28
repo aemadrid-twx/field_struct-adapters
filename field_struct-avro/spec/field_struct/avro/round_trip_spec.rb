@@ -556,6 +556,21 @@ RSpec.describe FieldStruct::Avro, 'encode and decode' do
     expect { described_class.schema(flagged) }.to raise_error(ArgumentError, /FalseOverride doesn't make a valid Avro schema/)
   end
 
+  it "says which fields are wrong when the avro gem can't write an invalid instance, keeping values out" do
+    klass = struct('Signup') do
+      required :id, :integer
+      required :pin, :string, sensitive: true
+    end
+
+    expect { described_class.encode(klass.new(id: 'abc', pin: 1234)) }.to raise_error(ArgumentError) { |error|
+      expect(error.message).to start_with("FieldStruct::Avro can't encode an invalid Signup: Id could not be coerced")
+      expect(error.message).not_to include('abc')
+      expect(error.cause).to be_a(Avro::IO::AvroTypeError)
+    }
+    expect { described_class.encode(klass.new(pin: 'x')) }
+      .to raise_error(ArgumentError, "FieldStruct::Avro can't encode an invalid Signup: Id is required")
+  end
+
   it 'round-trips many generated values' do
     klass = struct('Sample') do
       required :i, :integer
