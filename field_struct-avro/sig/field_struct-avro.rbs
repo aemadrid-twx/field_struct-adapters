@@ -247,8 +247,14 @@ module FieldStruct
       # 
       # _@return_ — the field's +avro:+ option. It is a
       # field option: struct and union nodes carry no options, and core
-      # refuses +element: {avro: …}+.
+      # refuses +element: {avro: …}+. One that isn't a Hash was refused
+      # by {.check_shape} when the class's fields were first read.
       def self.field: (FieldStruct::Introspection::Property property) -> ::Hash[Symbol, Object]
+
+      # _@param_ `property`
+      # 
+      # _@param_ `label` — the field, as Class#field
+      def self.check_shape: (FieldStruct::Introspection::Property property, String label) -> void
 
       # An array's elements and a union's members take the field's options,
       # except +:type+, which replaces only the field it was given on.
