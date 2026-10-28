@@ -361,7 +361,22 @@ RSpec.describe FieldStruct::JSONSchema do
         klass = struct('UsesShouty') { required :s, Shouty }
 
         expect { described_class.generate(klass) }
-          .to raise_error(ArgumentError, /generate: Shouty#json_schema must be a Hash or a boolean, got \[1\]/)
+          .to raise_error(ArgumentError, /generate: Shouty#json_schema \(for UsesShouty#s\) must be a Hash or a boolean, got \[1\]/)
+      end
+
+      it "names the type and the field when a type's json_schema raises, keeping its error as the cause" do
+        stub_const('Exploding', Class.new(FieldStruct::Types::Base) do
+          def coerce(value, **) = value
+          def ruby_type = String
+          def json_schema = {}.fetch('missing')
+        end)
+        klass = struct('UsesExploding') { optional :tags, :array, of: Exploding }
+
+        expect { described_class.generate(klass) }.to raise_error(ArgumentError) { |error|
+          expect(error.message).to eq('FieldStruct::JSONSchema.generate: Exploding#json_schema raised KeyError ' \
+                                      '(for UsesExploding#tags): key not found: "missing"')
+          expect(error.cause).to be_a(KeyError)
+        }
       end
 
       it 'never builds the element of an array whose json_schema: replaces it' do

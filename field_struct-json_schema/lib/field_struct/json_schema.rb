@@ -265,6 +265,8 @@ module FieldStruct
         @inlining = []
         @stamps = {}
         @hooked = false
+        # The field being described, as Class#field, for error messages.
+        @fields = []
       end
 
       # @return [Boolean] whether a type's own +json_schema+ method was asked
@@ -312,10 +314,12 @@ module FieldStruct
       # @return [Hash{String=>Object}]
       def property_schema(property, klass)
         field = property.field
+        @fields.push("#{klass.name || klass.inspect}##{field.name}")
         option = field.options[:json_schema]
-        schema = override(option) { "the json_schema: option of #{klass.name || klass.inspect}##{field.name}" } ||
-          node_schema(property.node)
+        schema = override(option) { "the json_schema: option of #{@fields.last}" } || node_schema(property.node)
         annotations(field).merge(field.required? ? schema : optional(schema, field.type_instance))
+      ensure
+        @fields.pop
       end
 
       # An optional field's schema: +null+ too (an override describes a
@@ -388,13 +392,33 @@ module FieldStruct
       def node_schema(node)
         hook = node.type.respond_to?(:json_schema)
         @hooked ||= hook
-        override(hook ? node.type.json_schema : nil) { "#{node.type.class.name || node.type.class.inspect}#json_schema" } ||
+        override(hook ? hook_schema(node.type) : nil) { "#{hook_name(node.type)} (for #{@fields.last})" } ||
           case node
           when Introspection::ArrayNode then array_schema(node)
           when Introspection::UnionNode then union_schema(node)
           when Introspection::StructNode then ref_for(node.klass)
           else scalar_schema(node.type, node.options)
           end
+      end
+
+      # Calls a custom type's +json_schema+ method, naming the type and the
+      # field when it raises: the exception is the app's, but the log line
+      # should say where it came from.
+      #
+      # @param type [FieldStruct::Types::Base]
+      # @return [Object] what the method returned
+      # @raise [ArgumentError] when the method raises, with its error as +cause+
+      def hook_schema(type)
+        type.json_schema
+      rescue StandardError => e
+        raise ArgumentError, "FieldStruct::JSONSchema.generate: #{hook_name(type)} raised #{e.class} " \
+                             "(for #{@fields.last}): #{e.message}"
+      end
+
+      # @param type [FieldStruct::Types::Base]
+      # @return [String] like +Money#json_schema+
+      def hook_name(type)
+        "#{type.class.name || type.class.inspect}#json_schema"
       end
 
       # @param node [FieldStruct::Introspection::ArrayNode]
