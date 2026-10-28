@@ -34,6 +34,8 @@ module FieldStruct
         @records = Hash.new { |hash, klass| hash[klass] = [] }
         @stamps = {}
         @inlining = []
+        # The field being described, as Class#field, for error messages.
+        @fields = []
       end
 
       # Each struct class's {Cache.stamp}, taken before the class was read,
@@ -88,8 +90,12 @@ module FieldStruct
         @inlining.push(klass)
         out = {'type' => 'record', 'name' => name}
         out['namespace'] = namespace if namespace
+        owner = named ? klass.name : @fields.last
         out['fields'] = Introspection.properties(klass, serialization: @serialization).map do |property|
+          @fields.push(named ? "#{owner}##{property.field.name}" : "#{owner}.#{property.field.name}")
           field_schema(property, name, namespace)
+        ensure
+          @fields.pop
         end
         out
       ensure
@@ -131,6 +137,15 @@ module FieldStruct
                              "put #{klass} in a module"
       end
 
+      # The field being described, then its Avro name (which tells union
+      # members apart, +_0+), so a log line can be traced to the declaration.
+      #
+      # @param avro_name [String]
+      # @return [String] like +Billing::Wide#grand_total (Avro Wide_grandTotal)+
+      def where(avro_name)
+        "#{@fields.last} (Avro #{avro_name})"
+      end
+
       # @param class_name [String] +"Billing::Invoice"+
       # @return [Array(String, String), Array(String, nil)] +["Invoice", "Billing"]+ (+nil+
       #   namespace for a top-level class)
@@ -146,7 +161,7 @@ module FieldStruct
       # @return [Hash{String=>Object}]
       def field_schema(property, record_name, namespace)
         field = property.field
-        check_name(property.key, "field #{field.name.inspect}")
+        check_name(property.key, "field #{@fields.last}")
         type = type_for(property.node, Options.field(property), "#{record_name}_#{property.key}", namespace)
         out = {'name' => property.key}
         out['doc'] = field.description if field.description
@@ -191,7 +206,7 @@ module FieldStruct
       # @return [Hash{String=>Object}]
       # @raise [ArgumentError] when the array records no element type
       def array_type(node, avro, name, namespace)
-        raise ArgumentError, "FieldStruct::Avro can't describe #{name}: an array of arrays or unions records no element type" unless node.element
+        raise ArgumentError, "FieldStruct::Avro can't describe #{where(name)}: an array of arrays or unions records no element type" unless node.element
 
         # Any element may be nil: validation skips nil elements.
         {'type' => 'array', 'items' => nullable(type_for(node.element, Options.nested(avro), name, namespace))}
@@ -209,7 +224,7 @@ module FieldStruct
         end
         slots = members.map { |member| union_slot(member) }
         clash = slots.find { |slot| slots.count(slot) > 1 }
-        raise ArgumentError, "FieldStruct::Avro can't describe #{name}: two union members both become Avro #{clash}" if clash
+        raise ArgumentError, "FieldStruct::Avro can't describe #{where(name)}: two union members both become Avro #{clash}" if clash
 
         check_struct_members(node, name)
 
@@ -238,7 +253,7 @@ module FieldStruct
           # Swapping helps only when the earlier one wouldn't then fit the later.
           swap = (struct_keys(later, required_only: true) - struct_keys(earlier)).empty? ? '' : ", or put #{later} first"
           why = required.empty? ? "#{earlier} has no required fields, so any record fits it" : "every required field of #{earlier} is in #{later}"
-          raise ArgumentError, "FieldStruct::Avro can't describe #{name}: a #{later} would be written as " \
+          raise ArgumentError, "FieldStruct::Avro can't describe #{where(name)}: a #{later} would be written as " \
                                "#{earlier}, which Avro picks by shape (#{why}). Give the structs distinct required fields#{swap}"
         end
       end
@@ -285,10 +300,10 @@ module FieldStruct
         when FieldStruct::Types::Float then 'double'
         when FieldStruct::Types::BigDecimal then decimal_type(type, options, avro, name)
         when FieldStruct::Types::Date then {'type' => 'int', 'logicalType' => 'date'}
-        when FieldStruct::Types::Time, FieldStruct::Types::DateTime then {'type' => 'long', 'logicalType' => "timestamp-#{Options.timestamp(avro, @timestamp)}"}
+        when FieldStruct::Types::Time, FieldStruct::Types::DateTime then {'type' => 'long', 'logicalType' => "timestamp-#{Options.timestamp(avro, @timestamp, @fields.last)}"}
         when FieldStruct::Types::Symbol then enum_type(options, avro, name, namespace) || 'string'
         else
-          raise ArgumentError, "FieldStruct::Avro has no mapping for #{type.class.name || type.class.inspect} (#{name}); give the field avro: {type: …}"
+          raise ArgumentError, "FieldStruct::Avro has no mapping for #{type.class.name || type.class.inspect} (#{where(name)}); give the field avro: {type: …}"
         end
       end
 
@@ -307,15 +322,15 @@ module FieldStruct
 
         precision = avro.fetch(:precision, DEFAULT_PRECISION)
         unless [scale, precision].all?(::Integer)
-          raise ArgumentError, "FieldStruct::Avro can't describe #{name}: decimal precision and scale must be integers, " \
+          raise ArgumentError, "FieldStruct::Avro can't describe #{where(name)}: decimal precision and scale must be integers, " \
                                "got #{precision.inspect} and #{scale.inspect}"
         end
 
         # A negative round: (to tens, hundreds) leaves no fractional digits.
         scale = [scale, 0].max
-        raise ArgumentError, "FieldStruct::Avro can't describe #{name}: precision #{precision} must be at least 1" if precision < 1
+        raise ArgumentError, "FieldStruct::Avro can't describe #{where(name)}: precision #{precision} must be at least 1" if precision < 1
         if scale > precision
-          raise ArgumentError, "FieldStruct::Avro can't describe #{name}: scale #{scale} is more than precision #{precision}; " \
+          raise ArgumentError, "FieldStruct::Avro can't describe #{where(name)}: scale #{scale} is more than precision #{precision}; " \
                                'raise avro: {precision:}'
         end
 

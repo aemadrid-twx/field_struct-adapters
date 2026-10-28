@@ -254,7 +254,9 @@ module FieldStruct
       # _@param_ `avro`
       # 
       # _@param_ `default` — the +timestamp:+ given to the call
-      def self.timestamp: (::Hash[Symbol, Object] avro, Symbol default) -> Symbol
+      # 
+      # _@param_ `field` — the field, as Class#field, for the error
+      def self.timestamp: (::Hash[Symbol, Object] avro, Symbol default, ?String? field) -> Symbol
 
       # _@param_ `avro`
       # 
