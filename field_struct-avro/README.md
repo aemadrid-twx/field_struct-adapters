@@ -39,6 +39,44 @@ FieldStruct::Avro.decode(Billing::Invoice, bytes) == invoice  # => true
 
 `to_datum` / `from_datum` give the Hash the avro gem reads and writes, for your own writer or a schema registry. `decode(klass, bytes, writer_schema:)` reads bytes written with an older schema. It raises where the avro gem would read those bytes as the wrong value, because it matches fields by base type only: a field whose decimal scale or timestamp precision changed, a date read as a number or time, or a decimal read as a plain string or the reverse. A decimal's precision may change: it isn't used when decoding. An optional field the older schema lacked gets its field_struct default, a date, decimal or proc included, even where the Avro schema can't carry that default. `encode` and `decode` keep each class's parsed schema, and each writer schema they've checked (and `to_datum`/`from_datum` each class's field list), and rebuild them when a field, a `serialize` mapping or a class name changes. Changing a field's options in place (an `avro:` Hash, an `enum:` Array) isn't noticed: declare the field again instead. `include FieldStruct::Avro::Methods` adds `Klass.to_avro_schema`, `#to_avro` and `Klass.from_avro`.
 
+<!-- doctest -->
+```ruby
+require 'field_struct/avro'
+
+class Order < FieldStruct::Base
+  required :id,    :integer
+  required :total, :big_decimal, round: 2
+  optional :due,   :date, default: Date.new(2026, 12, 1)
+end
+
+order = Order.new(id: 7, total: '12.5')
+FieldStruct::Avro.to_datum(order) # => {'id' => 7, 'total' => BigDecimal('12.50'), 'due' => Date.new(2026, 12, 1)}
+FieldStruct::Avro.from_datum(Order, FieldStruct::Avro.to_datum(order)) == order # => true
+
+# An older writer, before :due existed, and the bytes it wrote:
+v1 = lambda do |scale|
+  {'type' => 'record', 'name' => 'Order', 'fields' => [
+    {'name' => 'id', 'type' => 'long'},
+    {'name' => 'total', 'type' => {'type' => 'bytes', 'logicalType' => 'decimal', 'precision' => 38, 'scale' => scale}}
+  ]}
+end
+write = lambda do |schema|
+  buffer = StringIO.new
+  Avro::IO::DatumWriter.new(Avro::Schema.parse(JSON.generate(schema)))
+                       .write({'id' => 7, 'total' => BigDecimal('12.5')}, Avro::IO::BinaryEncoder.new(buffer))
+  buffer.string
+end
+
+FieldStruct::Avro.decode(Order, write.call(v1.call(2)), writer_schema: v1.call(2)).due # => Date.new(2026, 12, 1)
+
+# Written with scale 3, the avro gem would read 12.500 as 125.00:
+begin
+  FieldStruct::Avro.decode(Order, write.call(v1.call(3)), writer_schema: v1.call(3))
+rescue ArgumentError => e
+  e.message.start_with?("FieldStruct::Avro can't read these bytes: total: written as decimal (scale 3)") # => true
+end
+```
+
 ## Mapping
 
 | FieldStruct | Avro | Notes |
