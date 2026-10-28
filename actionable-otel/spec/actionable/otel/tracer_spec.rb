@@ -27,6 +27,15 @@ RSpec.describe Actionable::Otel do
     expect(exporter.finished_spans.map(&:name)).to include('Ping.run')
   end
 
+  it "leaves core's error for a step that overwrites @result" do
+    stub_const('Clobber', Class.new(Actionable::Action) do
+      step :go
+      def go = @result = 'junk'
+    end)
+
+    expect { Clobber.run }.to raise_error(Actionable::DefinitionError, /@result is reserved/)
+  end
+
   it "never hands out a replaced provider's tracer while the new one is being made" do
     old_tracer = Object.new
     new_tracer = Object.new
