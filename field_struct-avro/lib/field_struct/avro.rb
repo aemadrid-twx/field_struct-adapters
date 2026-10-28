@@ -79,13 +79,22 @@ module FieldStruct
     # @param serialization [Symbol, String]
     # @param timestamp [Symbol]
     # @return [String] the Avro binary encoding, without a container or header
-    # @raise [ArgumentError] as {.schema} does, and when a time is too precise
+    # @raise [ArgumentError] as {.schema} does, when a time is too precise, and
+    #   when the avro gem can't write an invalid +struct+ (naming its errors)
     def self.encode(struct, serialization: :avro, timestamp: :micros)
       serialization = check(struct.class, serialization, timestamp)
       parsed = CACHE.reader(struct.class, serialization, timestamp).parsed
       io = StringIO.new(+'', 'wb')
       ::Avro::IO::DatumWriter.new(parsed).write(to_datum(struct, serialization:, timestamp:), ::Avro::IO::BinaryEncoder.new(io))
       io.string
+    rescue ::Avro::IO::AvroTypeError
+      # Only on the error path: an invalid instance says which fields, where
+      # the avro gem names a value (sensitive or not) and no field. The
+      # gem's error isn't kept as the cause, since it quotes that value.
+      raise if struct.valid?
+
+      raise ArgumentError, "FieldStruct::Avro can't encode an invalid #{struct.class}: #{struct.errors.full_messages.join("; ")}",
+        cause: nil
     end
 
     # @param klass [Class<FieldStruct::Base>]
