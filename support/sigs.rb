@@ -75,7 +75,8 @@ module AdapterSigs
     aside = "#{sig_file}.aside"
     File.rename(sig_file, aside) if File.exist?(sig_file)
     FileUtils.rm_rf('.yardoc')
-    output, status = Open3.capture2e('bundle', 'exec', 'sord', target, '--rbs', '--no-sord-comments')
+    # Private methods stay out: Ruby hides them, so the signatures should too.
+    output, status = Open3.capture2e('bundle', 'exec', 'sord', target, '--rbs', '--no-sord-comments', '--hide-private')
     abort "sord failed (exit #{status.exitstatus}):\n#{output}" unless status.success?
 
     guard!(output, File.read(target))
@@ -97,9 +98,11 @@ module AdapterSigs
       abort 'Write these YARD types in full (FieldStruct::..., Actionable::...), ' \
             "so sord can't guess what they mean: #{short.join(", ")}"
     end
-    return unless rbs.include?('SORD_ERROR') || rbs.match?(/\buntyped\b/)
+    # Only declarations count: a doc comment may say "untyped" in prose.
+    untyped = rbs.lines.grep_v(/\A\s*#/).grep(/SORD_ERROR|\buntyped\b/)
+    return if untyped.empty?
 
-    abort "sord couldn't type everything (SORD_ERROR or untyped in the output). " \
-          "Fix the YARD types it names:\n#{plain.lines.grep(/OMIT|DUCK|SORD_ERROR|untyped/).join}"
+    abort "sord couldn't type everything (SORD_ERROR or untyped in the output):\n#{untyped.join}" \
+          "Fix the YARD types sord names:\n#{plain.lines.grep(/OMIT|DUCK|SORD_ERROR|untyped/).join}"
   end
 end

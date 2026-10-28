@@ -59,7 +59,6 @@ module FieldStruct
     DRAFT: String
     DECIMAL_PATTERN: String
     BLANK_STRING: ::Hash[String, String]
-    UNSUPPORTED_OPTIONS: Integer
     CACHE: Cache
     VERSION: String
 
@@ -116,16 +115,6 @@ module FieldStruct
       # _@return_ — the fields, mapping, name and unknown_attributes policy
       def self.stamp: (singleton(FieldStruct::Base) klass, Symbol serialization) -> ::Array[Object]
 
-      # _@param_ `value`
-      # 
-      # _@return_ — +value+, frozen all the way down
-      def deep_freeze: (Object value) -> Object
-
-      # _@param_ `stamps`
-      # 
-      # _@param_ `serialization`
-      def fresh?: (::Hash[singleton(FieldStruct::Base), ::Array[Object]] stamps, Symbol serialization) -> bool
-
       # A cached schema and the stamps it is valid for.
       class Entry
         # _@param_ `schema`
@@ -151,110 +140,6 @@ module FieldStruct
       def hooked?: () -> bool
 
       def schema: () -> ::Hash[String, Object]
-
-      # _@param_ `klass`
-      def object_schema: (singleton(FieldStruct::Base) klass) -> ::Hash[String, Object]
-
-      # _@param_ `property`
-      def property_schema: (FieldStruct::Introspection::Property property) -> ::Hash[String, Object]
-
-      # An optional field's schema: +null+ too (an override describes a
-      # present value, so it gets +null+ like any other), plus a blank string
-      # when the field is String-family and its schema would refuse one.
-      # 
-      # _@param_ `schema`
-      # 
-      # _@param_ `type`
-      def optional: (::Hash[String, Object] schema, FieldStruct::Types::Base _type) -> ::Hash[String, Object]
-
-      # _@param_ `field`
-      def annotations: (FieldStruct::Field field) -> ::Hash[String, Object]
-
-      # The declared default as +to_json+ writes it, when that's certain
-      # without coercing: a literal of the field's own JSON type. Anything
-      # else (a callable, a value the setter would convert) is left out.
-      # 
-      # _@param_ `field`
-      def json_default: (FieldStruct::Field field) -> Object?
-
-      # _@param_ `value`
-      # 
-      # _@return_ — whether +value+ is a non-nil JSON value
-      def json_value?: (Object value) -> bool
-
-      # The node's schema: what its type's own +json_schema+ method returns,
-      # when the type defines one, else derived from the node.
-      # 
-      # _@param_ `node`
-      def node_schema: ((FieldStruct::Introspection::ScalarNode | FieldStruct::Introspection::ArrayNode | FieldStruct::Introspection::UnionNode | FieldStruct::Introspection::StructNode) node) -> ::Hash[String, Object]
-
-      # _@param_ `node`
-      def array_schema: (FieldStruct::Introspection::ArrayNode node) -> ::Hash[String, Object]
-
-      # _@param_ `node`
-      # 
-      # _@return_ — +{}+ when a member accepts anything
-      def union_schema: (FieldStruct::Introspection::UnionNode node) -> ::Hash[String, Object]
-
-      # _@param_ `klass`
-      def ref_for: (singleton(FieldStruct::Base) klass) -> ::Hash[String, Object]
-
-      # _@param_ `klass` — an anonymous struct
-      def inline: (singleton(FieldStruct::Base) klass) -> ::Hash[String, Object]
-
-      # _@param_ `type`
-      # 
-      # _@param_ `options`
-      def scalar_schema: (FieldStruct::Types::Base _type, ::Hash[Symbol, Object] options) -> ::Hash[String, Object]
-
-      # The struct checks a String-family value only against the +format:+
-      # Regexp in +options+ (UUID, URL and Email fields get their default
-      # when none is declared; array elements get one only through
-      # +element:+), so that Regexp is the whole constraint. JSON Schema's
-      # +email+ and +uri+ formats are stricter than our defaults, so those
-      # become patterns; the default UUID Regexp is exactly +format: uuid+.
-      # 
-      # _@param_ `type` — a String-family type
-      # 
-      # _@param_ `options`
-      def string_schema: (FieldStruct::Types::String _type, ::Hash[Symbol, Object] options) -> ::Hash[String, Object]
-
-      # _@param_ `format` — the JSON Schema format of the canonical output
-      # 
-      # _@param_ `option` — the field's +format:+
-      # 
-      # _@param_ `canonical` — presets that write the canonical form
-      def temporal: (String format, (String | Symbol)? option, ::Array[Symbol] canonical) -> ::Hash[String, Object]
-
-      # _@param_ `schema`
-      # 
-      # _@param_ `values`
-      def enum: (::Hash[String, Object] schema, ::Array[Object]? values) -> ::Hash[String, Object]
-
-      # _@param_ `schema`
-      # 
-      # _@param_ `bound` — an +in:+ option
-      def range: (::Hash[String, Object] schema, (::Range[Numeric] | ::Array[Object])? bound) -> ::Hash[String, Object]
-
-      # _@param_ `bound` — a Range end
-      # 
-      # _@return_ — a JSON number, or +nil+ for an open or
-      # infinite end (JSON has no Infinity)
-      def json_number: (Numeric? bound) -> (Integer | Float)?
-
-      # _@param_ `type` — a type FieldStruct doesn't ship
-      def custom_schema: (FieldStruct::Types::Base _type) -> ::Hash[String, Object]
-
-      # A +json_schema:+ override (field option or the type's +json_schema+)
-      # as a Hash: the boolean schemas become their object forms.
-      # 
-      # _@param_ `value`
-      def override: ((::Hash[String, Object] | bool)? value) -> ::Hash[String, Object]?
-
-      # _@param_ `schema`
-      # 
-      # _@return_ — +schema+ also accepting +null+
-      def nullable: (::Hash[String, Object] schema) -> ::Hash[String, Object]
 
       # {Cache.stamp} of every class {#schema} described (the root, +$defs+,
       # inlined anonymous ones), taken before the class was read, so a class
@@ -333,104 +218,6 @@ module FieldStruct
       # _@return_ — the ECMA-262 pattern, or +nil+ when there is no
       # exact translation
       def to_s: () -> String?
-
-      def step: () -> void
-
-      # _@param_ `char`
-      def outside_char: (String char) -> void
-
-      # Emits something a quantifier may follow.
-      def atom: () -> void
-
-      # Emits something a quantifier may not follow (an anchor, +|+).
-      # 
-      # _@param_ `text`
-      def plain_token: (String text) -> void
-
-      # _@param_ `char` — +*+, +++ or +?+
-      def quantifier: (String char) -> void
-
-      def interval: () -> void
-
-      def group: () -> void
-
-      # _@return_ — +:lookaround+ or +:plain+
-      def named_or_lookbehind: () -> Symbol
-
-      def close_group: () -> void
-
-      def open_class: () -> void
-
-      # _@param_ `char`
-      def class_char: (String char) -> void
-
-      def close_class: () -> void
-
-      # Under +/i+, a letter in a class stands for every character Ruby folds
-      # it with: +b+ becomes +bB+, +s+ becomes +sS\u017F+, and an ASCII range
-      # +a-f+ becomes +a-fA-F+ (plus +\u017F+ / +K+ when it covers +s+ / +k+). A
-      # range with a letter at only one end has no folded form.
-      # 
-      # _@param_ `char` — a cased letter inside a class
-      # 
-      # _@param_ `dash` — whether a range +-+ came right before it
-      def fold_class_char: (String char, bool dash) -> String
-
-      # Under +/i+, a range between two non-letters (+!-~+) still folds the
-      # letters it covers, which a JavaScript class won't.
-      # 
-      # _@param_ `high` — the range's upper end
-      def check_folded_range: (String high) -> void
-
-      # _@param_ `char` — a class member that isn't a cased letter
-      def class_literal: (String char) -> String
-
-      # _@param_ `char` — the escaped character
-      def escape: (String char) -> void
-
-      # _@param_ `char`
-      def class_escape: (String char) -> void
-
-      # _@param_ `char`
-      # 
-      # _@return_ — the escape as ECMA-262 writes it
-      def shared_escape: (String char) -> String
-
-      # _@param_ `char` — +x+ or +u+
-      # 
-      # _@param_ `body` — the hex digits that must follow
-      def hex_escape: (String char, Regexp body) -> String
-
-      # _@param_ `char`
-      # 
-      # _@param_ `body` — what must follow +\char+
-      def copy_escape: (String char, Regexp body) -> String
-
-      # _@param_ `char` — a literal outside a class
-      def literal: (String char) -> String
-
-      # _@param_ `start` — a position in the output
-      # 
-      # _@return_ — the lowercase letters spelled out as folds
-      # from +start+ on
-      def folded_since: (Integer? start) -> ::Array[String]
-
-      # _@param_ `char` — an ASCII letter
-      # 
-      # _@return_ — every character Ruby's +/i+ matches it with
-      def folds: (String char) -> String
-
-      # _@param_ `char`
-      # 
-      # _@return_ — whether +char+ needs folding under +/i+
-      def cased?: (String char) -> bool
-
-      def take: () -> String?
-
-      def peek: () -> String?
-
-      # _@return_ — never returns
-      def unsupported: () -> void
 
       # Raised internally when the source has no exact translation.
       class Unsupported < StandardError

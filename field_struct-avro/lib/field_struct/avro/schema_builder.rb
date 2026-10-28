@@ -147,7 +147,7 @@ module FieldStruct
       def field_schema(property, record_name, namespace)
         field = property.field
         check_name(property.key, "field #{field.name.inspect}")
-        type = type_for(property.node, field_avro(property), "#{record_name}_#{property.key}", namespace)
+        type = type_for(property.node, Options.field(property), "#{record_name}_#{property.key}", namespace)
         out = {'name' => property.key}
         out['doc'] = field.description if field.description
         default = default_for(field, type)
@@ -166,33 +166,6 @@ module FieldStruct
         out
       end
 
-      # @param property [FieldStruct::Introspection::Property]
-      # @return [Hash{Symbol=>Object}] the field's +avro:+ option, whatever
-      #   its node (a struct or union node carries no options of its own)
-      def field_avro(property)
-        options = property.field.options[:avro]
-        options.is_a?(::Hash) ? options : {}
-      end
-
-      # An array's elements and a union's members take the field's +avro:+
-      # options, under any of their own, except +:type+, which replaces only
-      # the field it was given on.
-      #
-      # @param avro [Hash{Symbol=>Object}] the enclosing node's options
-      # @param node [Object]
-      # @return [Hash{Symbol=>Object}]
-      def nested(avro, node)
-        avro.except(:type).merge(avro_options(node))
-      end
-
-      # @param node [FieldStruct::Introspection::ScalarNode, FieldStruct::Introspection::ArrayNode,
-      #   FieldStruct::Introspection::UnionNode, FieldStruct::Introspection::StructNode]
-      # @return [Hash{Symbol=>Object}] the node's +avro:+ option
-      def avro_options(node)
-        options = node.respond_to?(:options) ? node.options[:avro] : nil
-        options.is_a?(::Hash) ? options : {}
-      end
-
       # @param node [FieldStruct::Introspection::ScalarNode, FieldStruct::Introspection::ArrayNode,
       #   FieldStruct::Introspection::UnionNode, FieldStruct::Introspection::StructNode]
       # @param avro [Hash{Symbol=>Object}] the node's +avro:+ option
@@ -200,7 +173,8 @@ module FieldStruct
       # @param namespace [String, nil]
       # @return [String, Hash{String=>Object}, Array<Object>]
       def type_for(node, avro, name, namespace)
-        return JSON.parse(JSON.generate(avro[:type])) if avro.key?(:type)
+        override = Options.type(avro)
+        return override if override
 
         case node
         when Introspection::ArrayNode then array_type(node, avro, name, namespace)
@@ -220,7 +194,7 @@ module FieldStruct
         raise ArgumentError, "FieldStruct::Avro can't describe #{name}: an array of arrays or unions records no element type" unless node.element
 
         # Any element may be nil: validation skips nil elements.
-        {'type' => 'array', 'items' => nullable(type_for(node.element, nested(avro, node.element), name, namespace))}
+        {'type' => 'array', 'items' => nullable(type_for(node.element, Options.nested(avro), name, namespace))}
       end
 
       # @param node [FieldStruct::Introspection::UnionNode]
@@ -231,7 +205,7 @@ module FieldStruct
       # @raise [ArgumentError] when two members land on one Avro type
       def union_type(node, avro, name, namespace)
         members = node.members.each_with_index.map do |member, index|
-          type_for(member, nested(avro, member), "#{name}_#{index}", namespace)
+          type_for(member, Options.nested(avro), "#{name}_#{index}", namespace)
         end
         slots = members.map { |member| union_slot(member) }
         clash = slots.find { |slot| slots.count(slot) > 1 }
@@ -278,7 +252,7 @@ module FieldStruct
       def struct_keys(klass, required_only: false)
         properties = Introspection.properties(klass, serialization: @serialization)
         if required_only
-          properties = properties.select { |property| property.field.required? && !field_avro(property).key?(:type) }
+          properties = properties.select { |property| property.field.required? && !Options.field(property).key?(:type) }
         end
         properties.map(&:key)
       end
@@ -311,21 +285,11 @@ module FieldStruct
         when FieldStruct::Types::Float then 'double'
         when FieldStruct::Types::BigDecimal then decimal_type(type, options, avro, name)
         when FieldStruct::Types::Date then {'type' => 'int', 'logicalType' => 'date'}
-        when FieldStruct::Types::Time, FieldStruct::Types::DateTime then {'type' => 'long', 'logicalType' => "timestamp-#{timestamp(avro)}"}
+        when FieldStruct::Types::Time, FieldStruct::Types::DateTime then {'type' => 'long', 'logicalType' => "timestamp-#{Options.timestamp(avro, @timestamp)}"}
         when FieldStruct::Types::Symbol then enum_type(options, avro, name, namespace) || 'string'
         else
           raise ArgumentError, "FieldStruct::Avro has no mapping for #{type.class.name || type.class.inspect} (#{name}); give the field avro: {type: …}"
         end
-      end
-
-      # @param avro [Hash{Symbol=>Object}]
-      # @return [Symbol]
-      # @raise [ArgumentError] for an unknown precision
-      def timestamp(avro)
-        value = avro.fetch(:timestamp, @timestamp)
-        return value if TIMESTAMPS.include?(value)
-
-        raise ArgumentError, "FieldStruct::Avro avro: {timestamp:} must be one of #{TIMESTAMPS.inspect}, got #{value.inspect}"
       end
 
       # A +round:+ decimal is an Avro decimal with that scale. Without one
@@ -338,7 +302,7 @@ module FieldStruct
       # @return [String, Hash{String=>Object}]
       # @raise [ArgumentError] when the scale doesn't fit the precision
       def decimal_type(type, options, avro, name)
-        scale = avro.fetch(:scale) { options.fetch(:round) { type.class.default_round } }
+        scale = Options.scale(avro, options, type)
         return 'string' if scale.nil?
 
         precision = avro.fetch(:precision, DEFAULT_PRECISION)
