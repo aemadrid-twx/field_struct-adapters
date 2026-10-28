@@ -96,6 +96,13 @@ end
 error.start_with?("FieldStruct::Avro: Typo doesn't make a valid Avro schema") # => true
 ```
 
+Schemas, field lists and checked writer schemas are cached per class, and the cache keeps each class alive. Under code reloading, clear it on each reload:
+
+```ruby
+# config/initializers/field_struct.rb
+Rails.application.reloader.to_prepare { FieldStruct::Avro.clear_cache }
+```
+
 ## Mapping
 
 | FieldStruct | Avro | Notes |

@@ -73,6 +73,17 @@ module FieldStruct
         @lock = Mutex.new
       end
 
+      # Drops every entry, and with them the classes they hold.
+      # @return [void]
+      def clear
+        @lock.synchronize do
+          @readers = {}
+          @writers = {}
+          @properties = {}
+        end
+        nil
+      end
+
       # @param klass [Class<FieldStruct::Base>]
       # @param serialization [Symbol]
       # @param timestamp [Symbol]
