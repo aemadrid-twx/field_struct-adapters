@@ -163,6 +163,12 @@ RSpec.describe FieldStruct::Avro, '.schema' do
     end
     expect { described_class.schema(record_first) }
       .to raise_error(ArgumentError, /an enum and an anonymous struct both become Avro Clash\.RecordFirst_x_0/)
+
+    reused = struct('Clash::Reused') do
+      required :x_0, member
+      required :x, :union, of: [member, :string]
+    end
+    expect(described_class.schema(reused)['fields'].last['type']).to eq(['Clash.Reused_x_0', 'string'])
   end
 
   it 'names an anonymous nested struct after its record and field' do
