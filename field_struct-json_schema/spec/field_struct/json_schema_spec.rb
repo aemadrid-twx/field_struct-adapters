@@ -324,6 +324,17 @@ RSpec.describe FieldStruct::JSONSchema do
         expect(properties['api_key']).to eq('x-sensitive' => true, 'type' => %w[string null])
       end
 
+      it "keeps a sensitive field's enum: and in: values, which are its rule" do
+        klass = struct('Tier') do
+          required :level, :symbol, enum: %i[basic gold], sensitive: true
+          required :code, :integer, in: 1..3, sensitive: true
+        end
+        properties = described_class.generate(klass)['properties']
+
+        expect(properties['level']).to include('enum' => %w[basic gold], 'x-sensitive' => true)
+        expect(properties['code']).to include('minimum' => 1, 'maximum' => 3, 'x-sensitive' => true)
+      end
+
       it "uses a field's json_schema: option verbatim" do
         klass = struct('Override') { required :tags, :value, json_schema: {'type' => 'array'} }
 
