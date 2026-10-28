@@ -249,14 +249,49 @@ RSpec.describe FieldStruct::Avro, 'encode and decode' do
       optional :on, :date, default: Date.new(2020, 1, 1)
       optional :tags, :array, of: :string, default: -> { %w[new] }
       optional :note, :string
+      optional :since, :date, default: Date.new(2019, 5, 1)
+      serialize :avro, since: 'firstSeen'
     end
 
     back = described_class.decode(klass, bytes, writer_schema: writer)
     expect(back).to eq(klass.new(id: 7, line: {sku: 'a'}))
-    expect(back.attributes).to include(blob: 'abc', on: Date.new(2020, 1, 1), tags: %w[new], note: nil)
+    expect(back.attributes).to include(blob: 'abc', on: Date.new(2020, 1, 1), tags: %w[new], note: nil, since: Date.new(2019, 5, 1))
     expect(back.line.qty).to eq(BigDecimal('1.50'))
     # A field the writer had keeps what was written, nil included.
     expect(described_class.decode(klass, described_class.encode(klass.new(id: 1, line: {sku: 'b'}, on: nil)))).to have_attributes(on: nil)
+
+    # A writer union narrowed to one of its structs: the other branch's
+    # fields say nothing about what this one wrote.
+    card = struct('Defaults::Card') do
+      required :x, :string
+      optional :note, :string, default: 'none'
+    end
+    bank = struct('Defaults::Bank') { required :y, :integer }
+    either = struct('Defaults::Either') { required :item, :union, of: [card, bank] }
+    only = struct('Defaults::Only') { required :item, card }
+    bytes = described_class.encode(either.new(item: card.new(x: 'a', note: 'written')))
+    back = described_class.decode(only, bytes, writer_schema: described_class.schema(either).merge('name' => 'Only'))
+    expect(back.item).to eq(card.new(x: 'a', note: 'written'))
+
+    # One anonymous struct written as two records, only one of which lacked
+    # suite: the other's written value stays.
+    bare = Class.new(FieldStruct::Base) { required :street, :string }
+    full = Class.new(FieldStruct::Base) do
+      required :street, :string
+      optional :suite, :string, default: 'n/a'
+    end
+    old_root = struct('Defaults::OldRoot') do
+      required :home, bare
+      required :work, full
+    end
+    root = struct('Defaults::Root') do
+      required :home, full
+      required :work, full
+    end
+    writer = JSON.parse(JSON.generate(described_class.schema(old_root)).gsub('OldRoot', 'Root'))
+    bytes = described_class.encode(old_root.new(home: {street: 'h'}, work: {street: 'w', suite: '5'}))
+    back = described_class.decode(root, bytes, writer_schema: writer)
+    expect([back.home.suite, back.work.suite]).to eq(['n/a', '5'])
   end
 
   it 'refuses bytes whose writer schema has another decimal scale or timestamp precision, instead of misreading them' do

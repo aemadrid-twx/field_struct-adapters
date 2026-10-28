@@ -101,7 +101,9 @@ module FieldStruct
       datum = ::Avro::IO::DatumReader.new(writer, reader).read(::Avro::IO::BinaryDecoder.new(StringIO.new(bytes)))
       # A field the writer lacked takes field_struct's own default, which
       # the Avro default can't always express (a date, a decimal, a proc).
-      skip = builder.records.transform_values { |names| names.flat_map { |name| absent.fetch(name, []) } }
+      # A class written under several record names skips only what all of
+      # them lacked, so a value one of them carried is never dropped.
+      skip = builder.records.transform_values { |names| names.map { |name| absent.fetch(name, []) }.reduce(:&) }
       Datum.new(serialization:, timestamp:, absent: skip).load(klass, datum)
     end
 

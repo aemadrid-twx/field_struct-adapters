@@ -51,7 +51,9 @@ module FieldStruct
         if reader.type_sym == :union
           return union(writer, reader, path, seen)
         elsif writer.type_sym == :union
-          return writer.schemas.flat_map { |branch| compare(branch, reader, path, seen) }
+          # Only the branches the avro gem would read as this reader.
+          return writer.schemas.select { |branch| ::Avro::SchemaCompatibility.match_schemas(branch, reader) }
+                               .flat_map { |branch| compare(branch, reader, path, seen) }
         end
         return promoted(writer, reader, path) unless writer.type_sym == reader.type_sym
 
