@@ -108,6 +108,20 @@ RSpec.describe FieldStruct::Avro::Cache do
     expect(FieldStruct::Avro.from_datum(box, {'id' => 1, 'part' => {'sku' => 'a', 'qty' => 2}, 'noteText' => nil}).part.qty).to eq(2)
   end
 
+  it 'stamps the properties before reading them, so a field added meanwhile is seen next time' do
+    added = false
+    allow(FieldStruct::Introspection).to receive(:properties).and_wrap_original do |original, *args, **options|
+      original.call(*args, **options).tap do
+        box.optional :late, :string unless added
+        added = true
+      end
+    end
+    FieldStruct::Avro::CACHE.properties(box, :avro)
+    allow(FieldStruct::Introspection).to receive(:properties).and_call_original
+
+    expect(FieldStruct::Avro::CACHE.properties(box, :avro).map(&:key)).to include('late')
+  end
+
   it 'agrees across threads' do
     value = box.new(id: 1, part: {sku: 'a'})
 

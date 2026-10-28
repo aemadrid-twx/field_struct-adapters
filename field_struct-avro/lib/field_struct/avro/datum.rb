@@ -39,9 +39,9 @@ module FieldStruct
       # @return [FieldStruct::Base]
       def load(klass, datum)
         absent = @absent.fetch(klass, nil)
-        properties = properties(klass)
-        properties = properties.reject { |property| absent.include?(property.key) } if absent && !absent.empty?
-        klass.new(properties.to_h { |property| [property.field.name, load_value(datum[property.key], property.node, field_avro(property))] })
+        list = properties(klass)
+        list = list.reject { |property| absent.include?(property.key) } if absent && !absent.empty?
+        klass.new(list.to_h { |property| [property.field.name, load_value(datum[property.key], property.node, field_avro(property))] })
       end
 
       private
