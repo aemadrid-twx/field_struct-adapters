@@ -73,6 +73,17 @@ module FieldStruct
         @lock = Mutex.new
       end
 
+      # Drops every entry, and with them the classes they hold.
+      # @return [void]
+      def clear
+        @lock.synchronize do
+          @readers = {}
+          @writers = {}
+          @properties = {}
+        end
+        nil
+      end
+
       # @param klass [Class<FieldStruct::Base>]
       # @param serialization [Symbol]
       # @param timestamp [Symbol]
@@ -166,6 +177,7 @@ module FieldStruct
         # Stamped before reading, so a change made meanwhile is seen next time.
         stamp = Cache.stamp(klass, serialization)
         list = Introspection.properties(klass, serialization:).freeze
+        list.each { |property| Options.check_shape(property, "#{klass.inspect}##{property.field.name}") }
         @lock.synchronize { @properties[key] = Properties.new(list, stamp) }
         list
       end

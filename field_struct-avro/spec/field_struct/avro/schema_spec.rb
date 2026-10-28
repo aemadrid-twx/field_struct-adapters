@@ -335,4 +335,26 @@ RSpec.describe FieldStruct::Avro, '.schema' do
     stray = struct('Stray') { required :s, :symbol, enum: %i[a b], avro: {enum_default: :zzz} }
     expect { described_class.schema(stray) }.to raise_error(ArgumentError, /Stray doesn't make a valid Avro schema.*Default 'zzz'/)
   end
+
+  it "refuses an avro: option that isn't a Hash, in the schema and in the datum" do
+    loose = struct('Loose') { required :v, :string, avro: 'string' }
+
+    expect { described_class.schema(loose) }.to raise_error(
+      ArgumentError, %(FieldStruct::Avro (Loose#v) avro: takes a Hash of options, like avro: {type: 'string'}, got "string")
+    )
+    expect { described_class.to_datum(loose.new(v: 'x')) }.to raise_error(ArgumentError, /\(Loose#v\) avro: takes a Hash/)
+  end
+
+  it 'refuses a serialization: that no struct in the tree declares' do
+    inner = struct('Mapped::Inner') do
+      required :first_name, :string
+      serialize :kafka, first_name: 'firstName'
+    end
+    outer = struct('Mapped::Outer') { required :inner, inner }
+
+    expect(described_class.schema(outer, serialization: :kafka)['fields'][0]['type']['fields'][0]['name']).to eq('firstName')
+    expect { described_class.schema(outer, serialization: :kafak) }
+      .to raise_error(ArgumentError, 'FieldStruct::Avro: no struct in Mapped::Outer declares serialize :kafak (declared: [:avro, :kafka])')
+    expect(described_class.schema(outer)['fields'][0]['name']).to eq('inner')
+  end
 end

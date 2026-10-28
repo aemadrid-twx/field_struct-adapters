@@ -97,6 +97,15 @@ properties['sku']    # => {"type" => "string", "minLength" => 8}
 properties['legacy'] # => {"anyOf" => [{"not" => {}}, {"type" => "null"}]}
 ```
 
+## Reloading
+
+Schemas are cached per class, and the cache keeps each class alive. Under code reloading, clear it on each reload:
+
+```ruby
+# config/initializers/field_struct.rb
+Rails.application.reloader.to_prepare { FieldStruct::JSONSchema.clear_cache }
+```
+
 ## Limits
 
 These follow field_struct's own validation, so the schema accepts exactly what the struct does (decided 2026-10-27):

@@ -95,6 +95,15 @@ module FieldStruct
     UNSUPPORTED_OPTIONS = Regexp::EXTENDED | Regexp::MULTILINE
     private_constant :UNSUPPORTED_OPTIONS
 
+    # Forgets every schema built so far. The cache holds each struct class
+    # it has seen, so under code reloading (Rails in development) call this
+    # on each reload; the next {.generate} rebuilds what it needs.
+    #
+    # @return [void]
+    def self.clear_cache
+      CACHE.clear
+    end
+
     # Generate the JSON Schema for a FieldStruct subclass.
     #
     # @param klass [Class<FieldStruct::Base>]
@@ -184,6 +193,13 @@ module FieldStruct
       def initialize
         @entries = {}
         @lock = Mutex.new
+      end
+
+      # Drops every entry, and with them the classes they hold.
+      # @return [void]
+      def clear
+        @lock.synchronize { @entries = {} }
+        nil
       end
 
       # @param klass [Class<FieldStruct::Base>]
