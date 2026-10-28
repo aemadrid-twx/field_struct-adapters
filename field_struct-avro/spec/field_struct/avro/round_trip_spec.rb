@@ -147,6 +147,15 @@ RSpec.describe FieldStruct::Avro, 'encode and decode' do
     expect([back.utc.utc?, back.utc.iso8601]).to eq([true, '2026-07-01T08:00:00Z']) # as field_struct gives it, so JSON keeps the Z
   end
 
+  it "rezones to UTC without touching the caller's Time" do
+    klass = struct('Stamp') { required :at, :time, zone: 'UTC' }
+    given = Time.new(2026, 7, 1, 8, 0, 0, '+03:00')
+
+    expect(described_class.from_datum(klass, {'at' => given}).at).to be_utc
+    expect(given.utc_offset).to eq(10_800)
+    expect(described_class.from_datum(klass, {'at' => given.dup.freeze}).at).to eq(given)
+  end
+
   it 'raises rather than truncate a decimal or an integer that does not fit' do
     money = struct('Money') { required :amount, :big_decimal, round: 2, avro: {precision: 4} }
     count = struct('Count') { required :n, :integer }
