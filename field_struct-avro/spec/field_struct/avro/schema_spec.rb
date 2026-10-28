@@ -284,6 +284,10 @@ RSpec.describe FieldStruct::Avro, '.schema' do
     expect(types['raw']).to eq('type' => 'map', 'values' => 'string')
     expect(types['cents']).to include('precision' => 12, 'scale' => 2)
     expect { described_class.schema(klass, timestamp: :seconds) }.to raise_error(ArgumentError, /timestamp: must be one of/)
+    expect { described_class.schema(klass, serialization: 1) }
+      .to raise_error(ArgumentError, /\AFieldStruct::Avro expects serialization: to be a Symbol, got 1\z/)
+    expect(described_class.schema(klass, serialization: 'avro')).to eq(described_class.schema(klass))
+    expect { described_class.to_datum(klass.new, serialization: []) }.to raise_error(ArgumentError, /serialization: to be a Symbol/)
     grid = struct('Grid') { required :rows, :array, of: :array }
     expect { described_class.schema(grid) }.to raise_error(ArgumentError, /records no element type/)
     expect { described_class.schema(Class.new(FieldStruct::Base)) }.to raise_error(ArgumentError, /needs a named class/)
