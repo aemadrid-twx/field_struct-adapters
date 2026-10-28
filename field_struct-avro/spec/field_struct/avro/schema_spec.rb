@@ -289,6 +289,14 @@ RSpec.describe FieldStruct::Avro, '.schema' do
     expect { described_class.schema(Class.new(FieldStruct::Base)) }.to raise_error(ArgumentError, /needs a named class/)
   end
 
+  it 'says where a recursive anonymous struct is used' do
+    node = Class.new(FieldStruct::Base)
+    node.optional :next, node
+    tree = struct('Tree') { required :root, node }
+    expect { described_class.schema(tree) }
+      .to raise_error(ArgumentError, /cannot describe a recursive anonymous struct \(at Tree#root\.next\); assign it to a constant/)
+  end
+
   it 'names the field as Class#field in its errors, with the Avro name beside it' do
     wide = struct('Billing::Wide') do
       required :grand_total, :big_decimal, round: 40

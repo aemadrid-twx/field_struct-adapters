@@ -13,9 +13,32 @@ module FieldStruct
       # @return [Hash{Symbol=>Object}]
       JSON_LOAD = {mode: :compat, decimal_class: ::BigDecimal}.freeze
 
-      # A time too precise for its field, raised deep in {#dump_value} and
-      # turned into an ArgumentError naming the field by {#dump}.
-      class Imprecise < ArgumentError
+      # An error raised deep in {#dump_value}, before the field is known.
+      # Each struct it passes through adds its field to {#path}, and the
+      # first named one (or the root) turns it into an ArgumentError naming
+      # the field as the schema builder does: Holder#inner.at. Only the error
+      # path pays for the label.
+      class Located < ArgumentError
+        # @return [Array<Symbol>] field names, outermost first
+        attr_reader :path
+        # @return [Boolean] whether the innermost field is sensitive
+        attr_accessor :sensitive
+
+        # @param message [String]
+        def initialize(message)
+          @path = []
+          super
+        end
+
+        # @param label [String] the field, like +Holder#inner.at+
+        # @return [String]
+        def final(label)
+          "FieldStruct::Avro (#{label}) #{message}"
+        end
+      end
+
+      # A time too precise for its field.
+      class Imprecise < Located
         # @return [::Time]
         attr_reader :time
 
@@ -25,8 +48,15 @@ module FieldStruct
           @time = time
           super("more precision than timestamp-#{precision}; round it, or use timestamp: :nanos")
         end
+
+        # @param label [String]
+        # @return [String]
+        def final(label)
+          # A sensitive field's value stays out of the message, which ends up in logs.
+          "FieldStruct::Avro: #{label} is #{sensitive ? "a sensitive time" : time.iso8601(9)}, which has #{message}"
+        end
       end
-      private_constant :Imprecise
+      private_constant :Located, :Imprecise
 
       # @param serialization [Symbol]
       # @param timestamp [Symbol, nil] the precision {#dump} checks times
@@ -45,15 +75,29 @@ module FieldStruct
       # @return [Hash{String=>Object}]
       # @raise [ArgumentError] naming the field, when a time is too precise
       def dump(struct)
-        properties(struct.class).to_h do |property|
+        dump_struct(struct)
+      rescue Located => e
+        # An anonymous root: nothing named above it.
+        raise ArgumentError, e.final("#{struct.class.inspect}##{e.path.join(".")}")
+      end
+
+      # @param struct [FieldStruct::Base]
+      # @return [Hash{String=>Object}]
+      # @raise [ArgumentError] from a named struct, naming the field
+      # @raise [Located] from an anonymous one, for the struct holding it
+      def dump_struct(struct)
+        klass = struct.class
+        properties(klass).to_h do |property|
           [property.key, dump_value(struct.public_send(property.field.name), property.node, Options.field(property))]
-        rescue Imprecise => e
-          # A sensitive field's value stays out of the message, which ends up in logs.
-          value = property.field.sensitive? ? 'a sensitive time' : e.time.iso8601(9)
-          raise ArgumentError, "FieldStruct::Avro: #{struct.class.name || struct.class.inspect}##{property.field.name} " \
-                               "is #{value}, which has #{e.message}"
+        rescue Located => e
+          e.sensitive = property.field.sensitive? if e.path.empty?
+          e.path.unshift(property.field.name)
+          raise e unless Introspection.named?(klass)
+
+          raise ArgumentError, e.final("#{klass.name}##{e.path.join(".")}")
         end
       end
+      private :dump_struct
 
       # @param klass [Class<FieldStruct::Base>]
       # @param datum [Hash{String=>Object}]
@@ -87,7 +131,7 @@ module FieldStruct
           element = node.element
           element_avro = Options.nested(avro)
           value.map { |item| dump_value(item, element, element_avro) }
-        when Introspection::StructNode then dump(value)
+        when Introspection::StructNode then dump_struct(value)
         when Introspection::UnionNode then dump_union(value, node, avro)
         else dump_scalar(value, node, avro)
         end
@@ -169,7 +213,11 @@ module FieldStruct
       # @return [::Time]
       # @raise [ArgumentError] when the precision would drop part of +time+
       def exact_time(time, avro)
-        precision = Options.timestamp(avro, @timestamp)
+        precision = begin
+          Options.timestamp(avro, @timestamp)
+        rescue ArgumentError => e
+          raise Located, e.message.delete_prefix('FieldStruct::Avro ')
+        end
         return time if (time.nsec % NANOS.fetch(precision)).zero?
 
         raise Imprecise.new(time, precision)
@@ -193,7 +241,7 @@ module FieldStruct
       def raw(value)
         case value
         when ::Symbol then value.to_s
-        when FieldStruct::Base then dump(value)
+        when FieldStruct::Base then dump_struct(value)
         when ::Array then value.map { |item| raw(item) }
         when ::Hash then value.to_h { |key, item| [raw(key), raw(item)] }
         else value

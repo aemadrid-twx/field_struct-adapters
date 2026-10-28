@@ -76,6 +76,17 @@ RSpec.describe FieldStruct::Avro, 'encode and decode' do
     expect(round_trip(tick, timestamp: :nanos).at.nsec).to eq(123_456_789)
   end
 
+  it 'names a field inside an anonymous struct the way the schema does, as Holder#inner.at' do
+    inner = Class.new(FieldStruct::Base) { required :at, :time }
+    holder = struct('Holder') { required :inner, inner }
+    late = holder.new(inner: {at: '2026-01-01T00:00:00.000000001Z'})
+    expect { described_class.to_datum(late) }.to raise_error(ArgumentError, /\AFieldStruct::Avro: Holder#inner\.at is 2026-01-01T00:00:00\.000000001Z/)
+
+    stamp = struct('Stamp') { required :at, :time, avro: {timestamp: :seconds} }
+    expect { described_class.to_datum(stamp.new(at: Time.now)) }
+      .to raise_error(ArgumentError, /\AFieldStruct::Avro \(Stamp#at\) avro: \{timestamp:\} must be one of/)
+  end
+
   it "keeps a sensitive time's value out of the precision error" do
     klass = struct('Session') { required :born, :time, sensitive: true }
     session = klass.new(born: '2026-10-25T21:55:12.123456789Z')

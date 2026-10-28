@@ -82,7 +82,9 @@ module FieldStruct
           name = anonymous_name
         end
         full_name = [namespace, name].compact.join('.')
-        raise ArgumentError, 'FieldStruct::Avro cannot describe a recursive anonymous struct; assign it to a constant' if @inlining.include?(klass)
+        if @inlining.include?(klass)
+          raise ArgumentError, "FieldStruct::Avro cannot describe a recursive anonymous struct (at #{@fields.last}); assign it to a constant"
+        end
         return full_name unless define(full_name, klass, named ? klass.to_s : 'an anonymous struct', named ? "put #{klass} in a module" : nil)
 
         @classes[klass] = full_name if named
