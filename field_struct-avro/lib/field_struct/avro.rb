@@ -97,7 +97,7 @@ module FieldStruct
     # @param timestamp [Symbol]
     # @return [FieldStruct::Base]
     # @raise [ArgumentError] as {.schema} does, and when the avro gem would
-    #   read a field as the wrong value (see {Resolution})
+    #   read a field as the wrong value or fail to read it (see {Resolution})
     def self.decode(klass, bytes, writer_schema: nil, serialization: :avro, timestamp: :micros)
       check(klass, timestamp)
       entry = CACHE.reader(klass, serialization, timestamp)

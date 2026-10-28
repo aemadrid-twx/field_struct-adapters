@@ -54,7 +54,9 @@ module FieldStruct
         elsif writer.type_sym == :union
           # Only the branches the avro gem would read as this reader.
           paired = writer.schemas.select { |branch| ::Avro::SchemaCompatibility.match_schemas(branch, reader) }
-          return paired.flat_map { |branch| compare(branch, reader, path, seen) } + unwrapped(paired, reader, path)
+          problems = paired.flat_map { |branch| compare(branch, reader, path, seen) }
+          # The double decode matters only once nothing else blocks the field.
+          return problems.empty? ? unwrapped(paired, reader, path) : problems
         end
         return promoted(writer, reader, path) unless writer.type_sym == reader.type_sym
 

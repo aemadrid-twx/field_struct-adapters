@@ -517,7 +517,7 @@ RSpec.describe FieldStruct::Avro, 'encode and decode' do
     bytes = described_class.encode(before.new(at: '2026-01-01T00:00:00Z'))
     writer = described_class.schema(before).merge('name' => 'After')
     expect { described_class.decode(after, bytes, writer_schema: writer, timestamp: :nanos) }
-      .to raise_error(ArgumentError, /at: written as timestamp-micros, read as timestamp-nanos/)
+      .to raise_error(ArgumentError, /at: written as timestamp-micros, read as timestamp-nanos\. /)
   end
 
   it 'refuses a time, date or decimal that went from optional to required, which the avro gem fails to decode' do
