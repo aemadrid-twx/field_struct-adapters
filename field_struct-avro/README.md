@@ -50,7 +50,7 @@ class Order < FieldStruct::Base
 end
 
 order = Order.new(id: 7, total: '12.5')
-FieldStruct::Avro.to_datum(order) # => {'id' => 7, 'total' => BigDecimal('12.50'), 'due' => Date.new(2026, 12, 1)}
+FieldStruct::Avro.to_datum(order) # => {'id' => 7, 'total' => BigDecimal('12.5'), 'due' => Date.new(2026, 12, 1)}
 FieldStruct::Avro.from_datum(Order, FieldStruct::Avro.to_datum(order)) == order # => true
 
 # An older writer, before :due existed, and the bytes it wrote:
@@ -62,19 +62,20 @@ v1 = lambda do |scale|
 end
 write = lambda do |schema|
   buffer = StringIO.new
-  Avro::IO::DatumWriter.new(Avro::Schema.parse(JSON.generate(schema)))
-                       .write({'id' => 7, 'total' => BigDecimal('12.5')}, Avro::IO::BinaryEncoder.new(buffer))
+  writer = Avro::IO::DatumWriter.new(Avro::Schema.parse(schema.to_json))
+  writer.write({'id' => 7, 'total' => BigDecimal('12.5')}, Avro::IO::BinaryEncoder.new(buffer))
   buffer.string
 end
 
 FieldStruct::Avro.decode(Order, write.call(v1.call(2)), writer_schema: v1.call(2)).due # => Date.new(2026, 12, 1)
 
 # Written with scale 3, the avro gem would read 12.500 as 125.00:
-begin
+error = begin
   FieldStruct::Avro.decode(Order, write.call(v1.call(3)), writer_schema: v1.call(3))
 rescue ArgumentError => e
-  e.message.start_with?("FieldStruct::Avro can't read these bytes: total: written as decimal (scale 3)") # => true
+  e.message
 end
+error.start_with?("FieldStruct::Avro can't read these bytes: total: written as decimal (scale 3)") # => true
 ```
 
 ## Mapping
