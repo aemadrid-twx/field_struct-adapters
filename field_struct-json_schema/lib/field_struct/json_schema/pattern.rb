@@ -79,6 +79,12 @@ module FieldStruct
       # The retry at every position, as an item (see #polynomial?).
       # @return [Hash{Symbol=>Object}]
       RETRY = {set: ANY, min: 0, max: Float::INFINITY, alternatives: nil}.freeze
+      # Most ways through one alternative {#paths} tries before giving up.
+      # @return [Integer]
+      PATHS = 1024
+      # A lookaround in a path: it matches nothing and stops nothing.
+      # @return [Hash{Symbol=>Object}]
+      ZERO_WIDTH = {set: 0, pass: ANY, variable: false}.freeze
       # Single-character escapes in an emitted atom, and what they stand for
       # (+\b+ only in a class: outside one it's unsupported).
       # @return [Hash{String=>String}]
@@ -571,13 +577,6 @@ module FieldStruct
         paths(items).any? { |path, _| chained?(path) }
       end
 
-      # Most ways through one alternative {#paths} tries before giving up.
-      # @return [Integer]
-      PATHS = 1024
-      # A lookaround in a path: it matches nothing and stops nothing.
-      # @return [Hash{Symbol=>Object}]
-      ZERO_WIDTH = {set: 0, pass: ANY, variable: false}.freeze
-
       # Every way through +items+, as flat paths of atoms: +set+ (what the atom
       # takes), +pass+ (the characters a split can carry past it: any, if it
       # can match nothing) and +variable+ (whether its count varies, +?+
@@ -671,7 +670,7 @@ module FieldStruct
           earlier[:first].anybits?(later[:first] & between) && earlier[:last].anybits?(later[:last])
         elsif earlier[:whole] || later[:whole]
           group, atom = earlier[:whole] ? [earlier, later] : [later, earlier]
-          (group[:set] & ~(atom[:set] & between)).zero?
+          group[:set].nobits?(~(atom[:set] & between))
         else
           earlier[:set].anybits?(later[:set] & between)
         end
