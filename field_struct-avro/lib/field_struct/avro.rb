@@ -90,8 +90,9 @@ module FieldStruct
 
     # @param klass [Class<FieldStruct::Base>]
     # @param bytes [String] binary from {.encode}
-    # @param writer_schema [Hash{String=>Object}, String, nil] the schema the bytes were
-    #   written with, when it differs from +klass+'s (Avro resolves the two)
+    # @param writer_schema [Hash{String=>Object}, String, Object, nil] the schema the bytes were
+    #   written with (a parsed +::Avro::Schema+ works too), when it differs from
+    #   +klass+'s (Avro resolves the two)
     # @param serialization [Symbol]
     # @param timestamp [Symbol]
     # @return [FieldStruct::Base]

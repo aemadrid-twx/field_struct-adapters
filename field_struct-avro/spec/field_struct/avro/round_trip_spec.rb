@@ -323,6 +323,10 @@ RSpec.describe FieldStruct::Avro, 'encode and decode' do
     old_schema = old_schema.merge('name' => 'V2')
 
     expect(described_class.decode(v2, bytes, writer_schema: old_schema)).to eq(v2.new(id: 7))
+    # A registry client hands back a parsed schema.
+    expect(described_class.decode(v2, bytes, writer_schema: Avro::Schema.parse(JSON.generate(old_schema)))).to eq(v2.new(id: 7))
+    expect { described_class.decode(v2, bytes, writer_schema: :v1) }
+      .to raise_error(ArgumentError, /writer_schema: expects a Hash, a JSON String or an Avro::Schema, got Symbol/)
   end
 
   it "fills fields the writer lacked from field_struct's defaults, even ones Avro can't express" do
