@@ -136,6 +136,7 @@ module FieldStruct
     # @param value [Object] part of a generated schema
     # @return [Object] +value+ with every Hash, Array and String copied, so a
     #   caller can't reach the field options the schema was built from
+    # @api private
     def self.deep_copy(value)
       case value
       # A Hash freezes its own copy of a String key, so the keys are already
@@ -146,7 +147,6 @@ module FieldStruct
       else value
       end
     end
-    private_class_method :deep_copy
 
     # The built schema per class and serialization, so {.generate} only
     # copies it. An entry is rebuilt when any class it covers changes its
@@ -186,13 +186,24 @@ module FieldStruct
         return entry.schema if entry && fresh?(entry.stamps, serialization)
 
         builder = Builder.new(klass, serialization)
-        schema = deep_freeze(builder.schema)
-        return schema if builder.hooked?
+        built = builder.schema
+        return built if builder.hooked?
 
-        stamps = builder.classes.to_h { |struct| [struct, stamp(struct, serialization)] }.freeze
-        entry = Entry.new(schema, stamps)
+        # Builder puts field defaults and options (enum:, in:, json_schema:)
+        # into the schema as they are; copy before freezing, so the class's
+        # own objects stay unfrozen.
+        schema = deep_freeze(JSONSchema.deep_copy(built))
+        entry = Entry.new(schema, builder.stamps.freeze)
         @lock.synchronize { @entries[key] = entry }
         schema
+      end
+
+      # @param klass [Class<FieldStruct::Base>]
+      # @param serialization [Symbol]
+      # @return [Array<Object>] the fields, mapping, name and unknown_attributes policy
+      def self.stamp(klass, serialization)
+        meta = klass.metadata
+        [meta.to_a.freeze, meta.serialization(serialization), klass.name, klass.unknown_attributes].freeze
       end
 
       private
@@ -209,14 +220,6 @@ module FieldStruct
         when ::Array then value.each { |item| deep_freeze(item) }
         end
         value.freeze
-      end
-
-      # @param klass [Class<FieldStruct::Base>]
-      # @param serialization [Symbol]
-      # @return [Array<Object>] the fields, mapping, name and unknown_attributes policy
-      def stamp(klass, serialization)
-        meta = klass.metadata
-        [meta.to_a.freeze, meta.serialization(serialization), klass.name, klass.unknown_attributes].freeze
       end
 
       # @param stamps [Hash{Class<FieldStruct::Base>=>Array<Object>}]
@@ -244,7 +247,7 @@ module FieldStruct
         @serialization = serialization
         @defs = {}
         @inlining = []
-        @classes = []
+        @stamps = {}
         @hooked = false
       end
 
@@ -253,9 +256,12 @@ module FieldStruct
         @hooked
       end
 
-      # @return [Array<Class<FieldStruct::Base>>] every class whose object
-      #   schema {#schema} built (the root, +$defs+, inlined anonymous ones)
-      attr_reader :classes
+      # {Cache.stamp} of every class {#schema} described (the root, +$defs+,
+      # inlined anonymous ones), taken before the class was read, so a class
+      # changed while the schema was built makes the entry stale rather than
+      # a stale entry look fresh.
+      # @return [Hash{Class<FieldStruct::Base>=>Array<Object>}]
+      attr_reader :stamps
 
       # @return [Hash{String=>Object}]
       def schema
@@ -271,7 +277,7 @@ module FieldStruct
       # @param klass [Class<FieldStruct::Base>]
       # @return [Hash{String=>Object}]
       def object_schema(klass)
-        @classes << klass unless @classes.include?(klass)
+        @stamps[klass] ||= Cache.stamp(klass, @serialization)
         properties = {}
         required = []
         Introspection.properties(klass, serialization: @serialization).each do |property|
@@ -390,6 +396,7 @@ module FieldStruct
         return {'$ref' => '#'} if klass.equal?(@root)
         return inline(klass) unless Introspection.named?(klass)
 
+        @stamps[klass] ||= Cache.stamp(klass, @serialization)
         unless @defs.key?(klass.name)
           @defs[klass.name] = {} # reserve the slot so a cycle refers back to it
           @defs[klass.name] = {'title' => klass.name}.merge(object_schema(klass))

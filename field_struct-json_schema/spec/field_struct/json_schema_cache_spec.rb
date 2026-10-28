@@ -69,6 +69,35 @@ RSpec.describe FieldStruct::JSONSchema::Cache do
     expect(generate(ledger)['properties']['amount']['description']).to eq('call 2')
   end
 
+  it "leaves the class's own defaults and options unfrozen" do
+    opts = struct('JInv::Opts') do
+      required :status, :string, enum: %w[open paid]
+      required :n, :integer, in: [1, 2, 3]
+      optional :meta, :value, default: {'source' => 'web'}
+    end
+    generate(opts)
+
+    expect([opts.metadata[:status].options[:enum], opts.metadata[:n].options[:in], opts.metadata[:meta].default]).to all(satisfy { |object| !object.frozen? })
+    expect { opts.new(status: 'open', n: 1).meta['campaign'] = 'fall' }.not_to raise_error
+  end
+
+  it 'keeps one entry per serialization' do
+    box.serialize :api, id: 'boxId'
+    generate(box)
+
+    expect(generate(box, serialization: :api)['properties'].keys).to eq(%w[boxId part])
+  end
+
+  it 'stamps a class before reading it, so a change made while the schema is built is noticed' do
+    builder = FieldStruct::JSONSchema::Builder.new(box, :json)
+    allow(FieldStruct::JSONSchema::Builder).to receive(:new).and_return(builder)
+    allow(builder).to receive(:schema).and_wrap_original { |original| original.call.tap { box.optional :late, :string } }
+    generate(box)
+    allow(FieldStruct::JSONSchema::Builder).to receive(:new).and_call_original
+
+    expect(generate(box)['properties'].keys).to include('late')
+  end
+
   it 'agrees across threads' do
     expected = generate(box)
 

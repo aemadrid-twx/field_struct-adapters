@@ -109,17 +109,17 @@ module FieldStruct
       # _@return_ — frozen; callers copy it
       def schema: (singleton(FieldStruct::Base) klass, Symbol serialization) -> ::Hash[String, Object]
 
-      # _@param_ `value`
-      # 
-      # _@return_ — +value+, frozen all the way down
-      def deep_freeze: (Object value) -> Object
-
       # _@param_ `klass`
       # 
       # _@param_ `serialization`
       # 
       # _@return_ — the fields, mapping, name and unknown_attributes policy
-      def stamp: (singleton(FieldStruct::Base) klass, Symbol serialization) -> ::Array[Object]
+      def self.stamp: (singleton(FieldStruct::Base) klass, Symbol serialization) -> ::Array[Object]
+
+      # _@param_ `value`
+      # 
+      # _@return_ — +value+, frozen all the way down
+      def deep_freeze: (Object value) -> Object
 
       # _@param_ `stamps`
       # 
@@ -256,9 +256,11 @@ module FieldStruct
       # _@return_ — +schema+ also accepting +null+
       def nullable: (::Hash[String, Object] schema) -> ::Hash[String, Object]
 
-      # _@return_ — every class whose object
-      # schema {#schema} built (the root, +$defs+, inlined anonymous ones)
-      attr_reader classes: ::Array[singleton(FieldStruct::Base)]
+      # {Cache.stamp} of every class {#schema} described (the root, +$defs+,
+      # inlined anonymous ones), taken before the class was read, so a class
+      # changed while the schema was built makes the entry stale rather than
+      # a stale entry look fresh.
+      attr_reader stamps: ::Hash[singleton(FieldStruct::Base), ::Array[Object]]
     end
 
     # Adds +Klass.to_json_schema+ to the classes that include it, so a tool

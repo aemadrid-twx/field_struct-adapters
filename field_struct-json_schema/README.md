@@ -38,7 +38,7 @@ schema['properties']['pets']['items']['anyOf'].first.keys  # => ["$ref"]
 schema['$defs'].values.first['properties']['born']  # => {"type" => ["string", "null"], "format" => "date"}
 ```
 
-It returns a Hash with String keys, a fresh copy each time: add enum values or descriptions for an LLM tool without touching the class, then `Oj.dump` or `JSON.generate` it. The built schema is kept per class and copied, so calling `generate` per request is cheap. It's rebuilt when a field, a `serialize` mapping, `unknown_attributes` or a class name changes, and it's never kept when a custom type's own `json_schema` method was asked, since that method may answer differently next time.
+It returns a Hash with String keys, a fresh copy each time: add enum values or descriptions for an LLM tool without touching the class, then `Oj.dump` or `JSON.generate` it. The built schema is kept per class and copied, so calling `generate` per request is cheap. It's rebuilt when a field, a `serialize` mapping, `unknown_attributes` or a class name changes, and it's never kept when a custom type's own `json_schema` method was asked, since that method may answer differently next time. A field's options changed in place (an `enum:` Array, a `json_schema:` Hash), or a `json_schema` method added to a type later, aren't noticed: declare the field again instead.
 
 ## What it describes
 
