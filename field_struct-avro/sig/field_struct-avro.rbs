@@ -212,6 +212,8 @@ module FieldStruct
     # 
     # @api private
     class Resolution
+      PROMOTIONS: ::Hash[Symbol, ::Array[Symbol]]
+
       # _@param_ `writer` — an +::Avro::Schema+
       # 
       # _@param_ `reader` — an +::Avro::Schema+
@@ -264,8 +266,10 @@ module FieldStruct
                     ::Array[::Array[String]] seen
                   ) -> ::Array[String]
 
-      # Avro promotes string and bytes into each other, so a decimal (bytes)
-      # read as a string, or the reverse, decodes into the wrong value.
+      # Avro promotes a writer's int to long, float or double, a long to
+      # float or double, and string and bytes into each other. When either
+      # side is a decoded logical type, the promoted value is wrong: a date's
+      # day count read as a timestamp's micros, a decimal's bytes as text.
       # 
       # _@param_ `writer` — an +::Avro::Schema+
       # 
@@ -286,6 +290,9 @@ module FieldStruct
       # _@param_ `path`
       def logical: (Object writer, Object reader, String path) -> ::Array[String]
 
+      # Precision isn't part of it: the avro gem never reads it when decoding,
+      # so widening a decimal's precision is a safe change.
+      # 
       # _@param_ `schema` — an +::Avro::Schema+
       def describe: (Object schema) -> String
     end

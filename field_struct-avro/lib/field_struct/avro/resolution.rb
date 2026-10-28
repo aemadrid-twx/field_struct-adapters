@@ -12,6 +12,13 @@ module FieldStruct
     #
     # @api private
     class Resolution
+      # Writer type => the reader types Avro promotes it to.
+      # @return [Hash{Symbol=>Array<Symbol>}]
+      PROMOTIONS = {
+        int: %i[long float double], long: %i[float double], float: %i[double],
+        string: %i[bytes], bytes: %i[string]
+      }.freeze
+
       # @param writer [Object] an +::Avro::Schema+
       # @param reader [Object] an +::Avro::Schema+
       # @return [void]
@@ -86,16 +93,18 @@ module FieldStruct
         end
       end
 
-      # Avro promotes string and bytes into each other, so a decimal (bytes)
-      # read as a string, or the reverse, decodes into the wrong value.
+      # Avro promotes a writer's int to long, float or double, a long to
+      # float or double, and string and bytes into each other. When either
+      # side is a decoded logical type, the promoted value is wrong: a date's
+      # day count read as a timestamp's micros, a decimal's bytes as text.
       #
       # @param writer [Object] an +::Avro::Schema+
       # @param reader [Object] an +::Avro::Schema+
       # @param path [String]
       # @return [Array<String>]
       def promoted(writer, reader, path)
-        pair = [writer.type_sym, reader.type_sym].sort
-        return [] unless pair == %i[bytes string] && [writer, reader].any? { |schema| decoded(schema) }
+        return [] unless PROMOTIONS.fetch(writer.type_sym, []).include?(reader.type_sym)
+        return [] unless [writer, reader].any? { |schema| decoded(schema) }
 
         ["#{path}: written as #{describe(writer)}, read as #{describe(reader)}"]
       end
@@ -116,13 +125,16 @@ module FieldStruct
         written == read ? [] : ["#{path}: written as #{written}, read as #{read}"]
       end
 
+      # Precision isn't part of it: the avro gem never reads it when decoding,
+      # so widening a decimal's precision is a safe change.
+      #
       # @param schema [Object] an +::Avro::Schema+
       # @return [String]
       def describe(schema)
         name = decoded(schema) || schema.type_sym.to_s
         return name unless name == 'decimal'
 
-        "#{name} (precision #{schema.precision}, scale #{schema.scale || 0})"
+        "#{name} (scale #{schema.scale || 0})"
       end
     end
   end

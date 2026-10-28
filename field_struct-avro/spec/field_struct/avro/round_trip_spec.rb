@@ -150,7 +150,7 @@ RSpec.describe FieldStruct::Avro, 'encode and decode' do
     writer = described_class.schema(v1).merge('name' => 'Money2')
 
     expect { described_class.decode(v2, bytes, writer_schema: writer) }
-      .to raise_error(ArgumentError, /amt: written as .*scale 2.*read as .*scale 3/)
+      .to raise_error(ArgumentError, /amt: written as decimal \(scale 2\), read as decimal \(scale 3\)/)
 
     tick = struct('Evo::Tick') do
       required :at, :time
@@ -194,6 +194,21 @@ RSpec.describe FieldStruct::Avro, 'encode and decode' do
     bytes = described_class.encode(with_string.new(id: id))
     writer = described_class.schema(with_string).merge('name' => 'WithUuid')
     expect(described_class.decode(with_uuid, bytes, writer_schema: writer)).to eq(with_uuid.new(id: id))
+  end
+
+  it "lets a decimal's precision change, and refuses a date read as a time" do
+    narrow = struct('Evo::Narrow') { required :amt, :big_decimal, round: 2, avro: {precision: 12} }
+    wide = struct('Evo::Wide') { required :amt, :big_decimal, round: 2, avro: {precision: 18} }
+    bytes = described_class.encode(narrow.new(amt: '1234567890.12'))
+    writer = described_class.schema(narrow).merge('name' => 'Wide')
+    expect(described_class.decode(wide, bytes, writer_schema: writer)).to eq(wide.new(amt: '1234567890.12'))
+
+    day = struct('Evo::Day') { required :on, :date }
+    moment = struct('Evo::Moment') { required :on, :time }
+    bytes = described_class.encode(day.new(on: '2026-10-27'))
+    writer = described_class.schema(day).merge('name' => 'Moment')
+    expect { described_class.decode(moment, bytes, writer_schema: writer) }
+      .to raise_error(ArgumentError, /on: written as date, read as timestamp-micros/)
   end
 
   it 'checks a recursive struct once, and a field that went from optional to required' do
