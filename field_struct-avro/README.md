@@ -54,7 +54,7 @@ FieldStruct::Avro.decode(Billing::Invoice, bytes) == invoice  # => true
 | `:time`, `:datetime` | `long` / `timestamp-micros` | `timestamp: :nanos`/`:millis`, globally or `avro: {timestamp:}`; encoding raises rather than drop precision; decoding puts the field's `zone:` back |
 | `:symbol, enum:` | named `enum` `<Record>_<field>` | symbols that aren't Avro names, or `avro: {enum: false}`, give a `string`; `avro: {enum_default:}` |
 | `:symbol` | `string` | |
-| `:value` | `string` holding JSON | the same JSON `to_json` writes (ISO 8601 times, plain decimals); decimals read back as BigDecimal, as from `from_json` |
+| `:value` | `string` holding JSON | the same JSON `to_json` writes (ISO 8601 times, plain decimals), so it reads back as from `from_json`: times and decimals as Strings, floats as BigDecimal |
 | optional | `["null", T]`, default `null` | with a literal default: `[T, "null"]` and that default |
 | `:array, of: T` | `array` of `["null", T]` | an array of arrays or unions raises: no element type is recorded |
 | nested struct | named `record` (`Billing::Line` → namespace `Billing`, name `Line`) | defined once, then referenced, so recursion works; anonymous ones are `<Record>_<field>`. A class with no module takes the namespace of the record it first appears in, as Avro gives it (`Line` inside `Billing::Invoice` is `Billing.Line`), and raises where Avro can't name it |
