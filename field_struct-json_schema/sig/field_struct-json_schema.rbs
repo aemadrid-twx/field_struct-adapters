@@ -60,6 +60,7 @@ module FieldStruct
     DECIMAL_PATTERN: String
     BLANK_STRING: ::Hash[String, String]
     UNSUPPORTED_OPTIONS: Integer
+    CACHE: Cache
     VERSION: String
 
     # Generate the JSON Schema for a FieldStruct subclass.
@@ -91,6 +92,53 @@ module FieldStruct
     # caller can't reach the field options the schema was built from
     def self.deep_copy: (Object value) -> Object
 
+    # The built schema per class and serialization, so {.generate} only
+    # copies it. An entry is rebuilt when any class it covers changes its
+    # fields, serialization mapping, name or +unknown_attributes+ policy. A
+    # schema that asked a type's own +json_schema+ method is never kept:
+    # that method may answer differently next time.
+    # 
+    # @api private
+    class Cache
+      def initialize: () -> void
+
+      # _@param_ `klass`
+      # 
+      # _@param_ `serialization`
+      # 
+      # _@return_ — frozen; callers copy it
+      def schema: (singleton(FieldStruct::Base) klass, Symbol serialization) -> ::Hash[String, Object]
+
+      # _@param_ `klass`
+      # 
+      # _@param_ `serialization`
+      # 
+      # _@return_ — the fields, mapping, name and unknown_attributes policy
+      def self.stamp: (singleton(FieldStruct::Base) klass, Symbol serialization) -> ::Array[Object]
+
+      # _@param_ `value`
+      # 
+      # _@return_ — +value+, frozen all the way down
+      def deep_freeze: (Object value) -> Object
+
+      # _@param_ `stamps`
+      # 
+      # _@param_ `serialization`
+      def fresh?: (::Hash[singleton(FieldStruct::Base), ::Array[Object]] stamps, Symbol serialization) -> bool
+
+      # A cached schema and the stamps it is valid for.
+      class Entry
+        # _@param_ `schema`
+        # 
+        # _@param_ `stamps`
+        def initialize: (::Hash[String, Object] schema, ::Hash[singleton(FieldStruct::Base), ::Array[Object]] stamps) -> void
+
+        attr_reader schema: ::Hash[String, Object]
+
+        attr_reader stamps: ::Hash[singleton(FieldStruct::Base), ::Array[Object]]
+      end
+    end
+
     # Walks one root class, collecting named nested structs into +$defs+.
     # @api private
     class Builder
@@ -98,6 +146,9 @@ module FieldStruct
       # 
       # _@param_ `serialization`
       def initialize: (singleton(FieldStruct::Base) root, Symbol serialization) -> void
+
+      # _@return_ — whether a type's own +json_schema+ method was asked
+      def hooked?: () -> bool
 
       def schema: () -> ::Hash[String, Object]
 
@@ -204,6 +255,12 @@ module FieldStruct
       # 
       # _@return_ — +schema+ also accepting +null+
       def nullable: (::Hash[String, Object] schema) -> ::Hash[String, Object]
+
+      # {Cache.stamp} of every class {#schema} described (the root, +$defs+,
+      # inlined anonymous ones), taken before the class was read, so a class
+      # changed while the schema was built makes the entry stale rather than
+      # a stale entry look fresh.
+      attr_reader stamps: ::Hash[singleton(FieldStruct::Base), ::Array[Object]]
     end
 
     # Adds +Klass.to_json_schema+ to the classes that include it, so a tool
