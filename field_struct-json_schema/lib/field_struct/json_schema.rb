@@ -60,7 +60,8 @@ module FieldStruct
   # * **Annotations:** +description:+ → +description+; a +default:+ that is
   #   already a literal of the field's JSON type → +default+ (a callable,
   #   or one the setter would convert, is left out);
-  #   +sensitive: true+ → +x-sensitive+ (+to_json+ still writes the value).
+  #   +sensitive: true+ → +x-sensitive+, and no +default+ (+to_json+ still
+  #   writes the value).
   # * **Overrides:** a field's +json_schema:+ option, then the type's own
   #   +json_schema+ method (define one on a custom type), replace the derived schema of a present
   #   value (an optional field still adds +null+). A
@@ -341,7 +342,9 @@ module FieldStruct
       def annotations(field)
         out = {}
         out['description'] = field.description if field.description
-        default = json_default(field)
+        # A sensitive field's default stays out: schemas go to API docs,
+        # registries and LLM tools, and the default may be a placeholder secret.
+        default = field.sensitive? ? nil : json_default(field)
         out['default'] = default unless default.nil?
         out['x-sensitive'] = true if field.sensitive?
         out

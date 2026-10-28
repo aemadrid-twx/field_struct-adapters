@@ -49,7 +49,8 @@ module FieldStruct
   # * **Annotations:** +description:+ → +description+; a +default:+ that is
   #   already a literal of the field's JSON type → +default+ (a callable,
   #   or one the setter would convert, is left out);
-  #   +sensitive: true+ → +x-sensitive+ (+to_json+ still writes the value).
+  #   +sensitive: true+ → +x-sensitive+, and no +default+ (+to_json+ still
+  #   writes the value).
   # * **Overrides:** a field's +json_schema:+ option, then the type's own
   #   +json_schema+ method (define one on a custom type), replace the derived schema of a present
   #   value (an optional field still adds +null+). A
